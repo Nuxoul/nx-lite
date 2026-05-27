@@ -37,6 +37,15 @@ assert_eq 'a%20b%2Bc' ./commands/url-enc 'a b+c'
 assert_eq 'a b+c' ./commands/url-dec 'a%20b%2Bc'
 assert_eq '5d41402abc4b2a76b9719d911017c592' ./commands/md5 hello
 
+if command -v timeout >/dev/null 2>&1; then
+  assert_eq 'aGVsbG8=' timeout 2 ./commands/base64-enc hello
+  interactive_like_output=$(timeout 2 ./commands/base64-enc hello < /dev/zero)
+  if [ "$interactive_like_output" != 'aGVsbG8=' ]; then
+    printf 'base64-enc waited for stdin despite argv input\n' >&2
+    exit 1
+  fi
+fi
+
 json_output=$(./commands/json-pretty '{"a":1}')
 json_expected='{
   "a": 1

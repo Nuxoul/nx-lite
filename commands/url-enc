@@ -26,6 +26,7 @@ BEGIN {
   from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
   if (from_args) {
     text = ENVIRON["NX_LITE_INPUT"]
+    exit
   }
 }
 
