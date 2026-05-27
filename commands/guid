@@ -1,0 +1,74 @@
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx guid
+  nx guid upper
+  nx guid no-dash
+  nx guid upper no-dash
+EOF
+}
+
+new_guid() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen
+  elif [ -r /proc/sys/kernel/random/uuid ]; then
+    cat /proc/sys/kernel/random/uuid
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "[guid]::NewGuid().ToString()" 2>/dev/null | tr -d '\r'
+  elif command -v openssl >/dev/null 2>&1; then
+    raw=$(openssl rand -hex 16) || return 1
+    a=$(printf '%s' "$raw" | cut -c1-8)
+    b=$(printf '%s' "$raw" | cut -c9-12)
+    c=$(printf '4%s' "$(printf '%s' "$raw" | cut -c14-16)")
+    d_nibble=$(printf '%s' "$raw" | cut -c17-17)
+    d_first=$(awk -v h="$d_nibble" 'BEGIN { p = index("0123456789abcdef", tolower(h)) - 1; printf "%x", 8 + (p % 4) }')
+    d_rest=$(printf '%s' "$raw" | cut -c18-20)
+    e=$(printf '%s' "$raw" | cut -c21-32)
+    printf '%s-%s-%s-%s%s-%s\n' "$a" "$b" "$c" "$d_first" "$d_rest" "$e"
+  else
+    return 127
+  fi
+}
+
+upper=0
+dash=1
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+    upper|--upper)
+      upper=1
+      ;;
+    lower|--lower)
+      upper=0
+      ;;
+    no-dash|nodash|compact|--no-dash)
+      dash=0
+      ;;
+    dash|dashed|--dash)
+      dash=1
+      ;;
+    *)
+      printf 'guid: unknown option: %s\n' "$arg" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+guid=$(new_guid) || {
+  printf 'guid: needs uuidgen, /proc uuid, powershell.exe, or openssl\n' >&2
+  exit 127
+}
+
+guid=$(printf '%s' "$guid" | tr '[:upper:]' '[:lower:]')
+[ "$dash" -eq 1 ] || guid=$(printf '%s' "$guid" | tr -d '-')
+[ "$upper" -eq 0 ] || guid=$(printf '%s' "$guid" | tr '[:lower:]' '[:upper:]')
+printf '%s\n' "$guid"

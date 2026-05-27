@@ -1,0 +1,46 @@
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx url [text...]
+  nx url -d [url-encoded...]
+  nx url decode [url-encoded...]
+
+Default mode is encode.
+EOF
+}
+
+mode=enc
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -d|--decode|dec|decode)
+    mode=dec
+    shift
+    ;;
+  -e|--encode|enc|encode)
+    mode=enc
+    shift
+    ;;
+  --)
+    shift
+    ;;
+esac
+
+case "$0" in
+  */*) script_dir=${0%/*} ;;
+  *) script_dir=. ;;
+esac
+
+script="$script_dir/url-$mode"
+if [ ! -x "$script" ]; then
+  printf 'url: missing helper module: %s\n' "$script" >&2
+  exit 127
+fi
+
+exec "$script" "$@"

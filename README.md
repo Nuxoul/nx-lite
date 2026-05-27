@@ -18,7 +18,14 @@ nx-lite/
 |   |-- base64
 |   |-- base64-enc
 |   |-- base64-dec
+|   |-- angle
+|   |-- color
+|   |-- guid
+|   |-- hash
+|   |-- json
 |   |-- json-pretty
+|   |-- pow2
+|   |-- url
 |   |-- url-enc
 |   |-- url-dec
 |   `-- md5
@@ -26,7 +33,14 @@ nx-lite/
 |   |-- base64
 |   |-- base64-enc
 |   |-- base64-dec
+|   |-- angle
+|   |-- color
+|   |-- guid
+|   |-- hash
+|   |-- json
 |   |-- json-pretty
+|   |-- pow2
+|   |-- url
 |   |-- url-enc
 |   |-- url-dec
 |   `-- md5
@@ -47,7 +61,14 @@ After installation, the runtime layout is:
     |   |-- base64
     |   |-- base64-enc
     |   |-- base64-dec
+    |   |-- angle
+    |   |-- color
+    |   |-- guid
+    |   |-- hash
+    |   |-- json
     |   |-- json-pretty
+    |   |-- pow2
+    |   |-- url
     |   |-- url-enc
     |   |-- url-dec
     |   `-- md5
@@ -55,7 +76,14 @@ After installation, the runtime layout is:
         |-- base64
         |-- base64-enc
         |-- base64-dec
+        |-- angle
+        |-- color
+        |-- guid
+        |-- hash
+        |-- json
         |-- json-pretty
+        |-- pow2
+        |-- url
         |-- url-enc
         |-- url-dec
         `-- md5
@@ -80,7 +108,14 @@ The default modules are executable POSIX `sh` scripts:
 - `commands/base64`
 - `commands/base64-enc`
 - `commands/base64-dec`
+- `commands/angle`
+- `commands/color`
+- `commands/guid`
+- `commands/hash`
+- `commands/json`
 - `commands/json-pretty`
+- `commands/pow2`
+- `commands/url`
 - `commands/url-enc`
 - `commands/url-dec`
 - `commands/md5`
@@ -154,7 +189,7 @@ Runtime requirements:
 - POSIX-compatible `sh`
 - POSIX-compatible `awk`
 
-The default modules do not require Python, pip packages, `base64`, `md5sum`, `openssl`, `jq`, `sed`, or other non-essential command tools.
+The text modules do not require Python, pip packages, `base64`, `md5sum`, `openssl`, `jq`, `sed`, or other non-essential command tools. `nx hash` uses the platform hash tools already available on the system, such as `sha256sum`, `shasum`, `openssl`, or Windows `certutil.exe`.
 
 If needed, add this to `~/.bashrc` or `~/.zshrc`:
 
@@ -191,11 +226,18 @@ sh tests/smoke.sh
 Expected default modules:
 
 ```text
+angle
 base64
 base64-dec
 base64-enc
+color
+guid
+hash
+json
 json-pretty
 md5
+pow2
+url
 url-dec
 url-enc
 ```
@@ -219,7 +261,23 @@ Hello
 ```
 
 ```sh
-nx json-pretty '{"a":1}'
+nx url "a b+c"
+```
+
+```text
+a%20b%2Bc
+```
+
+```sh
+nx url -d "a%20b%2Bc"
+```
+
+```text
+a b+c
+```
+
+```sh
+nx json '{"a":1}'
 ```
 
 ```json
@@ -228,11 +286,55 @@ nx json-pretty '{"a":1}'
 }
 ```
 
+Hash a file path. The default algorithm is SHA-256:
+
+```sh
+nx hash ./README.md
+```
+
+Use another algorithm:
+
+```sh
+nx hash md5 ./README.md
+nx hash sha1 ./README.md
+```
+
+Generate a GUID:
+
+```sh
+nx guid
+nx guid upper no-dash
+```
+
+Convert colors between hex, 0-255 RGB, and 0-1 float RGB:
+
+```sh
+nx color "#FF8040"
+nx color rgb 255 128 64
+nx color float 1 0.502 0.251
+```
+
+Work with power-of-two texture sizes:
+
+```sh
+nx pow2 300
+nx pow2 down 300
+nx pow2 check 512
+```
+
+Convert angles:
+
+```sh
+nx angle rad 90
+nx angle deg 3.141592653589793
+```
+
 Compatibility aliases:
 
 ```sh
 nx base64-enc "hello"
 nx base64-dec "SGVsbG8="
+nx json-pretty '{"a":1}'
 nx url-enc "a b+c"
 nx url-dec "a%20b%2Bc"
 nx md5 "hello"

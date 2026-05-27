@@ -1,0 +1,77 @@
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx pow2 <number>
+  nx pow2 up <number>
+  nx pow2 down <number>
+  nx pow2 check <number>
+
+Default mode is up.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+esac
+
+mode=up
+case "${1:-}" in
+  up|next)
+    mode=up
+    shift
+    ;;
+  down|prev)
+    mode=down
+    shift
+    ;;
+  check|is)
+    mode=check
+    shift
+    ;;
+esac
+
+value=${1:-}
+[ -n "$value" ] || {
+  printf 'pow2: missing number\n' >&2
+  exit 1
+}
+
+LC_ALL=C awk -v mode="$mode" -v value="$value" '
+function fail(message) {
+  print "pow2: " message > "/dev/stderr"
+  exit 1
+}
+
+BEGIN {
+  if (value !~ /^[0-9]+$/) {
+    fail("expected a positive integer")
+  }
+  n = int(value)
+  if (n < 1) {
+    fail("expected a positive integer")
+  }
+
+  p = 1
+  while (p < n) {
+    p *= 2
+  }
+
+  if (mode == "check") {
+    print (p == n ? "true" : "false")
+  } else if (mode == "down") {
+    if (p > n) {
+      p /= 2
+    }
+    print p
+  } else {
+    print p
+  }
+}
+'

@@ -1,0 +1,107 @@
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx color <#rgb|#rrggbb|rgb|rrggbb>
+  nx color rgb <r> <g> <b>
+  nx color float <r> <g> <b>
+EOF
+}
+
+[ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ] && [ "${1:-}" != "help" ] || {
+  usage
+  exit 0
+}
+
+LC_ALL=C awk -v mode="${1:-}" -v a="${2:-}" -v b="${3:-}" -v c="${4:-}" '
+function fail(message) {
+  print "color: " message > "/dev/stderr"
+  exit 1
+}
+
+function hexval(ch,    p) {
+  ch = toupper(ch)
+  p = index("0123456789ABCDEF", ch)
+  return p ? p - 1 : -1
+}
+
+function hexbyte(s,    hi, lo) {
+  hi = hexval(substr(s, 1, 1))
+  lo = hexval(substr(s, 2, 1))
+  if (hi < 0 || lo < 0) {
+    fail("invalid hex color")
+  }
+  return hi * 16 + lo
+}
+
+function tohex(n,    hi, lo, chars) {
+  chars = "0123456789ABCDEF"
+  n = int(n)
+  if (n < 0 || n > 255) {
+    fail("rgb component out of range: " n)
+  }
+  hi = int(n / 16)
+  lo = n % 16
+  return substr(chars, hi + 1, 1) substr(chars, lo + 1, 1)
+}
+
+function print_color(r, g, b) {
+  printf "#%s%s%s\n", tohex(r), tohex(g), tohex(b)
+  printf "rgb %d %d %d\n", r, g, b
+  printf "float %.3f %.3f %.3f\n", r / 255, g / 255, b / 255
+}
+
+function parse_hex(s,    r, g, b) {
+  sub(/^#/, "", s)
+  if (length(s) == 3) {
+    s = substr(s, 1, 1) substr(s, 1, 1) substr(s, 2, 1) substr(s, 2, 1) substr(s, 3, 1) substr(s, 3, 1)
+  }
+  if (length(s) != 6) {
+    fail("expected #rgb or #rrggbb")
+  }
+  r = hexbyte(substr(s, 1, 2))
+  g = hexbyte(substr(s, 3, 2))
+  b = hexbyte(substr(s, 5, 2))
+  print_color(r, g, b)
+}
+
+function parse_255(x, name) {
+  if (x !~ /^[0-9]+$/) {
+    fail("invalid " name " component: " x)
+  }
+  x = int(x)
+  if (x < 0 || x > 255) {
+    fail(name " component out of range: " x)
+  }
+  return x
+}
+
+function parse_float(x, name) {
+  if (x !~ /^(0|1|0\.[0-9]+|1\.0+)$/) {
+    fail("invalid " name " float component: " x)
+  }
+  return int((x + 0) * 255 + 0.5)
+}
+
+BEGIN {
+  if (mode == "") {
+    fail("missing color")
+  }
+  if (mode == "rgb") {
+    if (a == "" || b == "" || c == "") {
+      fail("usage: nx color rgb <r> <g> <b>")
+    }
+    print_color(parse_255(a, "red"), parse_255(b, "green"), parse_255(c, "blue"))
+  } else if (mode == "float") {
+    if (a == "" || b == "" || c == "") {
+      fail("usage: nx color float <r> <g> <b>")
+    }
+    print_color(parse_float(a, "red"), parse_float(b, "green"), parse_float(c, "blue"))
+  } else {
+    parse_hex(mode)
+  }
+}
+'

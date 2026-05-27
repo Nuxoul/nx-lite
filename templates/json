@@ -1,0 +1,39 @@
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx json [json...]
+  nx json pretty [json...]
+
+Default mode is pretty.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -p|--pretty|pretty)
+    shift
+    ;;
+  --)
+    shift
+    ;;
+esac
+
+case "$0" in
+  */*) script_dir=${0%/*} ;;
+  *) script_dir=. ;;
+esac
+
+script="$script_dir/json-pretty"
+if [ ! -x "$script" ]; then
+  printf 'json: missing helper module: %s\n' "$script" >&2
+  exit 127
+fi
+
+exec "$script" "$@"

@@ -1,0 +1,158 @@
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx hash [file...]
+  nx hash sha256 [file...]
+  nx hash sha1 [file...]
+  nx hash md5 [file...]
+  nx hash -a <sha256|sha1|md5> [file...]
+
+Default algorithm is sha256.
+EOF
+}
+
+die() {
+  printf 'hash: %s\n' "$*" >&2
+  exit 1
+}
+
+normalize_algo() {
+  case "$1" in
+    sha256|sha-256|256) printf 'sha256\n' ;;
+    sha1|sha-1|1) printf 'sha1\n' ;;
+    md5|5) printf 'md5\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+windows_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+input_path() {
+  if [ -f "$1" ]; then
+    printf '%s\n' "$1"
+  elif command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$1" 2>/dev/null || printf '%s\n' "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+certutil_hash() {
+  cert_algo=$1
+  file=$2
+  win_file=$(windows_path "$file")
+
+  certutil.exe -hashfile "$win_file" "$cert_algo" 2>/dev/null | awk '
+    /^[[:xdigit:]][[:xdigit:] ]*$/ {
+      gsub(/[[:space:]]/, "")
+      print tolower($0)
+      found = 1
+      exit
+    }
+    END {
+      if (!found) {
+        exit 1
+      }
+    }
+  '
+}
+
+digest_file() {
+  algo=$1
+  file=$2
+
+  case "$algo" in
+    sha256)
+      if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | awk '{ print $1 }'
+      elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | awk '{ print $1 }'
+      elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha256 "$file" | awk '{ print $NF }'
+      elif command -v certutil.exe >/dev/null 2>&1; then
+        certutil_hash SHA256 "$file"
+      else
+        return 127
+      fi
+      ;;
+    sha1)
+      if command -v sha1sum >/dev/null 2>&1; then
+        sha1sum "$file" | awk '{ print $1 }'
+      elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 1 "$file" | awk '{ print $1 }'
+      elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha1 "$file" | awk '{ print $NF }'
+      elif command -v certutil.exe >/dev/null 2>&1; then
+        certutil_hash SHA1 "$file"
+      else
+        return 127
+      fi
+      ;;
+    md5)
+      if command -v md5sum >/dev/null 2>&1; then
+        md5sum "$file" | awk '{ print $1 }'
+      elif command -v md5 >/dev/null 2>&1; then
+        md5 -q "$file"
+      elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -md5 "$file" | awk '{ print $NF }'
+      elif command -v certutil.exe >/dev/null 2>&1; then
+        certutil_hash MD5 "$file"
+      else
+        return 127
+      fi
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+algo=sha256
+
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -a|--algo)
+    shift
+    [ "$#" -gt 0 ] || die "missing algorithm after -a"
+    algo=$(normalize_algo "$1") || die "unsupported algorithm: $1"
+    shift
+    ;;
+  sha256|sha-256|256|sha1|sha-1|1|md5|5)
+    algo=$(normalize_algo "$1") || die "unsupported algorithm: $1"
+    shift
+    ;;
+esac
+
+[ "$#" -gt 0 ] || die "missing file path"
+
+count=$#
+for file in "$@"; do
+  hash_file=$(input_path "$file")
+  [ -f "$hash_file" ] || die "not a file: $file"
+  digest=$(digest_file "$algo" "$hash_file") || {
+    status=$?
+    if [ "$status" -eq 127 ]; then
+      die "$algo needs one of: ${algo}sum, shasum, openssl, certutil.exe"
+    fi
+    die "failed to hash: $file"
+  }
+
+  if [ "$count" -eq 1 ]; then
+    printf '%s\n' "$digest"
+  else
+    printf '%s  %s\n' "$digest" "$file"
+  fi
+done

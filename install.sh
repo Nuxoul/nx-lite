@@ -51,4 +51,4 @@ sh "$ENTRYPOINT" init
 
 printf '\nInstall complete. Try:\n'
 printf '  nx --help\n'
-printf '  nx base64-enc "hello"\n'
+printf '  nx base64 "hello"\n'
