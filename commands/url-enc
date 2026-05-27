@@ -1,0 +1,50 @@
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function init_ord(    i) {
+  for (i = 1; i < 256; i++) {
+    ordv[sprintf("%c", i)] = i
+  }
+}
+
+function is_unreserved(c) {
+  return (c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c == "-" || c == "_" || c == "." || c == "~"
+}
+
+BEGIN {
+  hex = "0123456789ABCDEF"
+  init_ord()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  out = ""
+  for (i = 1; i <= length(text); i++) {
+    c = substr(text, i, 1)
+    if (is_unreserved(c)) {
+      out = out c
+    } else {
+      b = ordv[c]
+      out = out "%" substr(hex, int(b / 16) + 1, 1) substr(hex, (b % 16) + 1, 1)
+    }
+  }
+  print out
+}
+'

@@ -1,0 +1,52 @@
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function init_ord(    i) {
+  for (i = 1; i < 256; i++) {
+    ordv[sprintf("%c", i)] = i
+  }
+}
+
+BEGIN {
+  alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  init_ord()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  n = length(text)
+  out = ""
+  for (i = 1; i <= n; i += 3) {
+    b1 = ordv[substr(text, i, 1)]
+    b2 = (i + 1 <= n) ? ordv[substr(text, i + 1, 1)] : 0
+    b3 = (i + 2 <= n) ? ordv[substr(text, i + 2, 1)] : 0
+
+    c1 = int(b1 / 4)
+    c2 = (b1 % 4) * 16 + int(b2 / 16)
+    c3 = (b2 % 16) * 4 + int(b3 / 64)
+    c4 = b3 % 64
+
+    out = out substr(alphabet, c1 + 1, 1) substr(alphabet, c2 + 1, 1)
+    out = out ((i + 1 <= n) ? substr(alphabet, c3 + 1, 1) : "=")
+    out = out ((i + 2 <= n) ? substr(alphabet, c4 + 1, 1) : "=")
+  }
+  print out
+}
+'

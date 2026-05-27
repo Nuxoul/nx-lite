@@ -1,0 +1,57 @@
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function fail(message) {
+  print "url-dec: " message > "/dev/stderr"
+  exit 1
+}
+
+function hexval(c,    p) {
+  c = toupper(c)
+  p = index("0123456789ABCDEF", c)
+  return p ? p - 1 : -1
+}
+
+BEGIN {
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  out = ""
+  for (i = 1; i <= length(text); i++) {
+    c = substr(text, i, 1)
+    if (c == "%") {
+      if (i + 2 > length(text)) {
+        fail("incomplete percent escape")
+      }
+      h1 = hexval(substr(text, i + 1, 1))
+      h2 = hexval(substr(text, i + 2, 1))
+      if (h1 < 0 || h2 < 0) {
+        fail("invalid percent escape")
+      }
+      out = out sprintf("%c", h1 * 16 + h2)
+      i += 2
+    } else {
+      out = out c
+    }
+  }
+  printf "%s\n", out
+}
+'

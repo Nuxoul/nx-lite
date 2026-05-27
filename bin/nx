@@ -1,0 +1,1091 @@
+#!/usr/bin/env sh
+
+set -u
+
+NX_LITE_HOME=${NX_LITE_HOME:-$HOME/.nx-lite}
+NX_LITE_BIN_DIR=${NX_LITE_BIN_DIR:-$HOME/.local/bin}
+NX_LITE_COMMANDS_DIR=${NX_LITE_COMMANDS_DIR:-$NX_LITE_HOME/commands}
+NX_LITE_TEMPLATES_DIR=${NX_LITE_TEMPLATES_DIR:-$NX_LITE_HOME/templates}
+NX_LITE_REMOTE_BASE=${NX_LITE_REMOTE_BASE:-}
+
+DEFAULT_MODULES="base64-enc base64-dec json-pretty url-enc url-dec md5"
+
+die() {
+  printf 'nx: %s\n' "$*" >&2
+  exit 1
+}
+
+ensure_dirs() {
+  mkdir -p "$NX_LITE_BIN_DIR" "$NX_LITE_HOME" "$NX_LITE_COMMANDS_DIR" "$NX_LITE_TEMPLATES_DIR" \
+    || die "failed to create nx-lite directories"
+}
+
+valid_module_name() {
+  case "${1:-}" in
+    ""|.*|*/*|*\\*|*..*) return 1 ;;
+  esac
+
+  case "$1" in
+    *[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-]*) return 1 ;;
+  esac
+
+  return 0
+}
+
+is_default_module() {
+  case "${1:-}" in
+    base64-enc|base64-dec|json-pretty|url-enc|url-dec|md5) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+list_commands() {
+  [ -d "$NX_LITE_COMMANDS_DIR" ] || return 0
+
+  for file in "$NX_LITE_COMMANDS_DIR"/*; do
+    [ -f "$file" ] || continue
+    [ -x "$file" ] || continue
+    name=${file##*/}
+    case "$name" in
+      .*|"") continue ;;
+    esac
+    printf '%s\n' "$name"
+  done | sort
+}
+
+print_command_list() {
+  commands=$(list_commands)
+  if [ -n "$commands" ]; then
+    printf '%s\n' "$commands" | sed 's/^/  /'
+  else
+    printf '  (no commands installed; run nx init)\n'
+  fi
+}
+
+usage() {
+  cat <<EOF
+nx-lite - modular terminal command toolbox
+
+Usage:
+  nx <command> [args...]
+  nx init
+  nx help | nx --help
+  nx mod <list|install|remove> [name]
+
+Directories:
+  commands:  $NX_LITE_COMMANDS_DIR
+  templates: $NX_LITE_TEMPLATES_DIR
+
+Available commands:
+EOF
+  print_command_list
+}
+
+mod_usage() {
+  cat <<EOF
+nx-lite module manager
+
+Usage:
+  nx mod list
+  nx mod install <name>
+  nx mod remove <name>
+  nx mod --help
+
+Install lookup order:
+  1. Local template: $NX_LITE_TEMPLATES_DIR/<name>
+  2. Built-in default module templates
+  3. Remote URL when NX_LITE_REMOTE_BASE is set
+EOF
+}
+
+write_default_template() {
+  name=$1
+  target=$2
+
+  case "$name" in
+    base64-enc)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function init_ord(    i) {
+  for (i = 1; i < 256; i++) {
+    ordv[sprintf("%c", i)] = i
+  }
+}
+
+BEGIN {
+  alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  init_ord()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  n = length(text)
+  out = ""
+  for (i = 1; i <= n; i += 3) {
+    b1 = ordv[substr(text, i, 1)]
+    b2 = (i + 1 <= n) ? ordv[substr(text, i + 1, 1)] : 0
+    b3 = (i + 2 <= n) ? ordv[substr(text, i + 2, 1)] : 0
+
+    c1 = int(b1 / 4)
+    c2 = (b1 % 4) * 16 + int(b2 / 16)
+    c3 = (b2 % 16) * 4 + int(b3 / 64)
+    c4 = b3 % 64
+
+    out = out substr(alphabet, c1 + 1, 1) substr(alphabet, c2 + 1, 1)
+    out = out ((i + 1 <= n) ? substr(alphabet, c3 + 1, 1) : "=")
+    out = out ((i + 2 <= n) ? substr(alphabet, c4 + 1, 1) : "=")
+  }
+  print out
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    base64-dec)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function fail(message) {
+  print "base64-dec: " message > "/dev/stderr"
+  exit 1
+}
+
+function init_map(    i, c) {
+  alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  for (i = 1; i <= length(alphabet); i++) {
+    c = substr(alphabet, i, 1)
+    value[c] = i - 1
+  }
+}
+
+function clean_base64(s,    i, c, out) {
+  out = ""
+  for (i = 1; i <= length(s); i++) {
+    c = substr(s, i, 1)
+    if (c == " " || c == "\t" || c == "\r" || c == "\n") {
+      continue
+    }
+    out = out c
+  }
+  return out
+}
+
+BEGIN {
+  init_map()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  data = clean_base64(text)
+  len = length(data)
+  if (len == 0) {
+    exit 0
+  }
+  if (len % 4 != 0) {
+    fail("invalid base64 length")
+  }
+
+  out = ""
+  for (i = 1; i <= len; i += 4) {
+    c1 = substr(data, i, 1)
+    c2 = substr(data, i + 1, 1)
+    c3 = substr(data, i + 2, 1)
+    c4 = substr(data, i + 3, 1)
+
+    if (!(c1 in value) || !(c2 in value)) {
+      fail("invalid base64 input")
+    }
+
+    pad = 0
+    if (c3 == "=") {
+      if (c4 != "=") {
+        fail("invalid padding")
+      }
+      pad = 2
+      v3 = 0
+      v4 = 0
+    } else {
+      if (!(c3 in value)) {
+        fail("invalid base64 input")
+      }
+      v3 = value[c3]
+      if (c4 == "=") {
+        pad = 1
+        v4 = 0
+      } else {
+        if (!(c4 in value)) {
+          fail("invalid base64 input")
+        }
+        v4 = value[c4]
+      }
+    }
+
+    if (pad && i + 4 <= len) {
+      fail("padding is only allowed at the end")
+    }
+
+    v1 = value[c1]
+    v2 = value[c2]
+    b1 = v1 * 4 + int(v2 / 16)
+    b2 = (v2 % 16) * 16 + int(v3 / 4)
+    b3 = (v3 % 4) * 64 + v4
+
+    out = out sprintf("%c", b1)
+    if (pad < 2) {
+      out = out sprintf("%c", b2)
+    }
+    if (pad < 1) {
+      out = out sprintf("%c", b3)
+    }
+  }
+  printf "%s\n", out
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    json-pretty)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function fail(message) {
+  print "json-pretty: invalid JSON: " message " at position " pos > "/dev/stderr"
+  exit 1
+}
+
+function peek() {
+  return substr(src, pos, 1)
+}
+
+function skip_ws(    c) {
+  while (pos <= n) {
+    c = peek()
+    if (c == " " || c == "\t" || c == "\r" || c == "\n") {
+      pos++
+    } else {
+      break
+    }
+  }
+}
+
+function write_indent(level,    i) {
+  for (i = 0; i < level; i++) {
+    printf "  "
+  }
+}
+
+function is_hex(c) {
+  return index("0123456789abcdefABCDEF", c) > 0
+}
+
+function parse_string(    start, c, e, i) {
+  if (peek() != "\"") {
+    fail("expected string")
+  }
+  start = pos
+  pos++
+  while (pos <= n) {
+    c = peek()
+    if (c == "\"") {
+      pos++
+      return substr(src, start, pos - start)
+    }
+    if (c == "\\") {
+      pos++
+      if (pos > n) {
+        fail("unterminated escape")
+      }
+      e = peek()
+      if (e == "\"" || e == "\\" || e == "/" || e == "b" || e == "f" || e == "n" || e == "r" || e == "t") {
+        pos++
+      } else if (e == "u") {
+        pos++
+        for (i = 0; i < 4; i++) {
+          if (pos + i > n || !is_hex(substr(src, pos + i, 1))) {
+            fail("invalid unicode escape")
+          }
+        }
+        pos += 4
+      } else {
+        fail("invalid escape")
+      }
+    } else {
+      pos++
+    }
+  }
+  fail("unterminated string")
+}
+
+function parse_number(    start, c, digits) {
+  start = pos
+  if (peek() == "-") {
+    pos++
+  }
+  if (peek() == "0") {
+    pos++
+  } else if (peek() >= "1" && peek() <= "9") {
+    while (peek() >= "0" && peek() <= "9") {
+      pos++
+    }
+  } else {
+    fail("expected number")
+  }
+
+  if (peek() == ".") {
+    pos++
+    digits = 0
+    while (peek() >= "0" && peek() <= "9") {
+      pos++
+      digits++
+    }
+    if (!digits) {
+      fail("expected digits after decimal point")
+    }
+  }
+
+  c = peek()
+  if (c == "e" || c == "E") {
+    pos++
+    c = peek()
+    if (c == "+" || c == "-") {
+      pos++
+    }
+    digits = 0
+    while (peek() >= "0" && peek() <= "9") {
+      pos++
+      digits++
+    }
+    if (!digits) {
+      fail("expected exponent digits")
+    }
+  }
+
+  return substr(src, start, pos - start)
+}
+
+function parse_literal(lit) {
+  if (substr(src, pos, length(lit)) != lit) {
+    fail("expected " lit)
+  }
+  pos += length(lit)
+  return lit
+}
+
+function parse_value(level,    c) {
+  skip_ws()
+  c = peek()
+  if (c == "{") {
+    parse_object(level)
+  } else if (c == "[") {
+    parse_array(level)
+  } else if (c == "\"") {
+    printf "%s", parse_string()
+  } else if (c == "-" || (c >= "0" && c <= "9")) {
+    printf "%s", parse_number()
+  } else if (c == "t") {
+    printf "%s", parse_literal("true")
+  } else if (c == "f") {
+    printf "%s", parse_literal("false")
+  } else if (c == "n") {
+    printf "%s", parse_literal("null")
+  } else {
+    fail("expected value")
+  }
+}
+
+function parse_object(level,    first, key, c) {
+  printf "{"
+  pos++
+  skip_ws()
+  if (peek() == "}") {
+    pos++
+    printf "}"
+    return
+  }
+
+  first = 1
+  while (pos <= n) {
+    if (!first) {
+      printf ","
+    }
+    printf "\n"
+    write_indent(level + 1)
+    skip_ws()
+    key = parse_string()
+    skip_ws()
+    if (peek() != ":") {
+      fail("expected colon")
+    }
+    pos++
+    printf "%s: ", key
+    parse_value(level + 1)
+    skip_ws()
+    c = peek()
+    if (c == ",") {
+      pos++
+      first = 0
+      continue
+    }
+    if (c == "}") {
+      pos++
+      printf "\n"
+      write_indent(level)
+      printf "}"
+      return
+    }
+    fail("expected comma or object end")
+  }
+  fail("unterminated object")
+}
+
+function parse_array(level,    first, c) {
+  printf "["
+  pos++
+  skip_ws()
+  if (peek() == "]") {
+    pos++
+    printf "]"
+    return
+  }
+
+  first = 1
+  while (pos <= n) {
+    if (!first) {
+      printf ","
+    }
+    printf "\n"
+    write_indent(level + 1)
+    parse_value(level + 1)
+    skip_ws()
+    c = peek()
+    if (c == ",") {
+      pos++
+      first = 0
+      continue
+    }
+    if (c == "]") {
+      pos++
+      printf "\n"
+      write_indent(level)
+      printf "]"
+      return
+    }
+    fail("expected comma or array end")
+  }
+  fail("unterminated array")
+}
+
+BEGIN {
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    src = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  src = src (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  if (src !~ /[^[:space:]]/) {
+    print "json-pretty: missing JSON input" > "/dev/stderr"
+    exit 1
+  }
+  pos = 1
+  n = length(src)
+  parse_value(0)
+  skip_ws()
+  if (pos <= n) {
+    fail("trailing data")
+  }
+  printf "\n"
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    url-enc)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function init_ord(    i) {
+  for (i = 1; i < 256; i++) {
+    ordv[sprintf("%c", i)] = i
+  }
+}
+
+function is_unreserved(c) {
+  return (c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c == "-" || c == "_" || c == "." || c == "~"
+}
+
+BEGIN {
+  hex = "0123456789ABCDEF"
+  init_ord()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  out = ""
+  for (i = 1; i <= length(text); i++) {
+    c = substr(text, i, 1)
+    if (is_unreserved(c)) {
+      out = out c
+    } else {
+      b = ordv[c]
+      out = out "%" substr(hex, int(b / 16) + 1, 1) substr(hex, (b % 16) + 1, 1)
+    }
+  }
+  print out
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    url-dec)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function fail(message) {
+  print "url-dec: " message > "/dev/stderr"
+  exit 1
+}
+
+function hexval(c,    p) {
+  c = toupper(c)
+  p = index("0123456789ABCDEF", c)
+  return p ? p - 1 : -1
+}
+
+BEGIN {
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  out = ""
+  for (i = 1; i <= length(text); i++) {
+    c = substr(text, i, 1)
+    if (c == "%") {
+      if (i + 2 > length(text)) {
+        fail("incomplete percent escape")
+      }
+      h1 = hexval(substr(text, i + 1, 1))
+      h2 = hexval(substr(text, i + 2, 1))
+      if (h1 < 0 || h2 < 0) {
+        fail("invalid percent escape")
+      }
+      out = out sprintf("%c", h1 * 16 + h2)
+      i += 2
+    } else {
+      out = out c
+    }
+  }
+  printf "%s\n", out
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    md5)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function init_ord(    i) {
+  for (i = 1; i < 256; i++) {
+    ordv[sprintf("%c", i)] = i
+  }
+}
+
+function init_md5(    ktmp, stmp, i) {
+  MOD = 4294967296
+  MASK = 4294967295
+  HEX = "0123456789abcdef"
+
+  pow2[0] = 1
+  for (i = 1; i <= 32; i++) {
+    pow2[i] = pow2[i - 1] * 2
+  }
+
+  split("3614090360 3905402710 606105819 3250441966 4118548399 1200080426 2821735955 4249261313 1770035416 2336552879 4294925233 2304563134 1804603682 4254626195 2792965006 1236535329 4129170786 3225465664 643717713 3921069994 3593408605 38016083 3634488961 3889429448 568446438 3275163606 4107603335 1163531501 2850285829 4243563512 1735328473 2368359562 4294588738 2272392833 1839030562 4259657740 2763975236 1272893353 4139469664 3200236656 681279174 3936430074 3572445317 76029189 3654602809 3873151461 530742520 3299628645 4096336452 1126891415 2878612391 4237533241 1700485571 2399980690 4293915773 2240044497 1873313359 4264355552 2734768916 1309151649 4149444226 3174756917 718787259 3951481745", ktmp, " ")
+  split("7 12 17 22 7 12 17 22 7 12 17 22 7 12 17 22 5 9 14 20 5 9 14 20 5 9 14 20 5 9 14 20 4 11 16 23 4 11 16 23 4 11 16 23 4 11 16 23 6 10 15 21 6 10 15 21 6 10 15 21 6 10 15 21", stmp, " ")
+
+  for (i = 0; i < 64; i++) {
+    K[i] = ktmp[i + 1] + 0
+    S[i] = stmp[i + 1] + 0
+  }
+}
+
+function add32(a, b,    r) {
+  r = (a + b) % MOD
+  return r < 0 ? r + MOD : r
+}
+
+function bit_and(a, b,    r, p, aa, bb) {
+  r = 0
+  p = 1
+  while (a > 0 || b > 0) {
+    aa = a % 2
+    bb = b % 2
+    if (aa && bb) {
+      r += p
+    }
+    a = int(a / 2)
+    b = int(b / 2)
+    p *= 2
+  }
+  return r
+}
+
+function bit_or(a, b,    r, p, aa, bb) {
+  r = 0
+  p = 1
+  while (a > 0 || b > 0) {
+    aa = a % 2
+    bb = b % 2
+    if (aa || bb) {
+      r += p
+    }
+    a = int(a / 2)
+    b = int(b / 2)
+    p *= 2
+  }
+  return r
+}
+
+function bit_xor(a, b,    r, p, aa, bb) {
+  r = 0
+  p = 1
+  while (a > 0 || b > 0) {
+    aa = a % 2
+    bb = b % 2
+    if ((aa && !bb) || (!aa && bb)) {
+      r += p
+    }
+    a = int(a / 2)
+    b = int(b / 2)
+    p *= 2
+  }
+  return r
+}
+
+function bit_not(a) {
+  return MASK - a
+}
+
+function lshift32(a, n,    i) {
+  for (i = 0; i < n; i++) {
+    a = (a * 2) % MOD
+  }
+  return a
+}
+
+function rshift32(a, n) {
+  return int(a / pow2[n])
+}
+
+function leftrotate(a, n) {
+  return add32(lshift32(a, n), rshift32(a, 32 - n))
+}
+
+function byte_hex(b) {
+  b = int(b) % 256
+  return substr(HEX, int(b / 16) + 1, 1) substr(HEX, (b % 16) + 1, 1)
+}
+
+function word_hex_le(w) {
+  return byte_hex(w % 256) byte_hex(int(w / 256) % 256) byte_hex(int(w / 65536) % 256) byte_hex(int(w / 16777216) % 256)
+}
+
+function digest(msg,    len, i, total, bitlen, low, high, offset, j, k, h0, h1, h2, h3, a, b, c, d, f, g, temp, x, bytes, m) {
+  len = length(msg)
+  for (i = 1; i <= len; i++) {
+    bytes[i - 1] = ordv[substr(msg, i, 1)]
+  }
+
+  bytes[len] = 128
+  total = len + 1
+  while (total % 64 != 56) {
+    bytes[total] = 0
+    total++
+  }
+
+  bitlen = len * 8
+  low = bitlen % MOD
+  high = int(bitlen / MOD)
+  for (i = 0; i < 4; i++) {
+    bytes[total + i] = int(low / pow2[8 * i]) % 256
+    bytes[total + 4 + i] = int(high / pow2[8 * i]) % 256
+  }
+  total += 8
+
+  h0 = 1732584193
+  h1 = 4023233417
+  h2 = 2562383102
+  h3 = 271733878
+
+  for (offset = 0; offset < total; offset += 64) {
+    for (j = 0; j < 16; j++) {
+      k = offset + j * 4
+      m[j] = bytes[k] + bytes[k + 1] * 256 + bytes[k + 2] * 65536 + bytes[k + 3] * 16777216
+    }
+
+    a = h0
+    b = h1
+    c = h2
+    d = h3
+
+    for (i = 0; i < 64; i++) {
+      if (i < 16) {
+        f = bit_or(bit_and(b, c), bit_and(bit_not(b), d))
+        g = i
+      } else if (i < 32) {
+        f = bit_or(bit_and(d, b), bit_and(bit_not(d), c))
+        g = (5 * i + 1) % 16
+      } else if (i < 48) {
+        f = bit_xor(bit_xor(b, c), d)
+        g = (3 * i + 5) % 16
+      } else {
+        f = bit_xor(c, bit_or(b, bit_not(d)))
+        g = (7 * i) % 16
+      }
+
+      temp = d
+      d = c
+      c = b
+      x = add32(add32(a, f), add32(K[i], m[g]))
+      b = add32(b, leftrotate(x, S[i]))
+      a = temp
+    }
+
+    h0 = add32(h0, a)
+    h1 = add32(h1, b)
+    h2 = add32(h2, c)
+    h3 = add32(h3, d)
+  }
+
+  return word_hex_le(h0) word_hex_le(h1) word_hex_le(h2) word_hex_le(h3)
+}
+
+BEGIN {
+  init_ord()
+  init_md5()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  print digest(text)
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  chmod +x "$target" || die "failed to mark $target executable"
+}
+
+install_entrypoint() {
+  target="$NX_LITE_BIN_DIR/nx"
+  self_path=$0
+
+  if [ ! -f "$self_path" ]; then
+    self_path=$(command -v "$0" 2>/dev/null || true)
+  fi
+
+  if [ -n "$self_path" ] && [ -r "$self_path" ]; then
+    if [ "$self_path" != "$target" ]; then
+      cp "$self_path" "$target" || die "failed to install entrypoint to $target"
+    fi
+    chmod +x "$target" || die "failed to mark $target executable"
+    printf 'installed entrypoint: %s\n' "$target"
+  else
+    printf 'nx: warning: could not locate current script; create %s manually\n' "$target" >&2
+  fi
+}
+
+install_default_modules() {
+  for name in $DEFAULT_MODULES; do
+    template="$NX_LITE_TEMPLATES_DIR/$name"
+    command_file="$NX_LITE_COMMANDS_DIR/$name"
+
+    write_default_template "$name" "$template"
+
+    if [ -e "$command_file" ]; then
+      printf 'kept existing module: %s\n' "$name"
+    else
+      cp "$template" "$command_file" || die "failed to install module $name"
+      chmod +x "$command_file" || die "failed to mark $command_file executable"
+      printf 'installed module: %s\n' "$name"
+    fi
+  done
+}
+
+print_path_hint() {
+  case ":${PATH:-}:" in
+    *":$NX_LITE_BIN_DIR:"*) return 0 ;;
+  esac
+
+  cat <<EOF
+
+Notice:
+  $NX_LITE_BIN_DIR is not in PATH.
+
+Add this line to ~/.bashrc or ~/.zshrc, then restart the shell:
+  export PATH="\$HOME/.local/bin:\$PATH"
+EOF
+}
+
+nx_init() {
+  ensure_dirs
+  install_entrypoint
+  install_default_modules
+  print_path_hint
+  printf '\nnx-lite initialized.\n'
+}
+
+download_remote_module() {
+  name=$1
+  target=$2
+
+  [ -n "$NX_LITE_REMOTE_BASE" ] || return 1
+
+  url="${NX_LITE_REMOTE_BASE%/}/$name"
+  tmp="$target.download.$$"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$tmp" || {
+      rm -f "$tmp"
+      return 1
+    }
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$tmp" "$url" || {
+      rm -f "$tmp"
+      return 1
+    }
+  else
+    printf 'nx: remote install needs curl or wget\n' >&2
+    return 1
+  fi
+
+  mv "$tmp" "$target" || {
+    rm -f "$tmp"
+    return 1
+  }
+  chmod +x "$target" || return 1
+  return 0
+}
+
+mod_list() {
+  printf 'Installed nx-lite modules:\n'
+  print_command_list
+}
+
+mod_install() {
+  name=${1:-}
+  [ -n "$name" ] || die "usage: nx mod install <name>"
+  valid_module_name "$name" || die "invalid module name: $name"
+
+  ensure_dirs
+
+  target="$NX_LITE_COMMANDS_DIR/$name"
+  template="$NX_LITE_TEMPLATES_DIR/$name"
+
+  if [ -e "$target" ]; then
+    printf 'module already installed: %s\n' "$name"
+    return 0
+  fi
+
+  if [ -f "$template" ]; then
+    cp "$template" "$target" || die "failed to install module $name from local template"
+    chmod +x "$target" || die "failed to mark $target executable"
+    printf 'installed module from local template: %s\n' "$name"
+    return 0
+  fi
+
+  if is_default_module "$name"; then
+    write_default_template "$name" "$target" || die "failed to install built-in module $name"
+    printf 'installed built-in module: %s\n' "$name"
+    return 0
+  fi
+
+  if download_remote_module "$name" "$target"; then
+    printf 'installed module from remote: %s\n' "$name"
+    return 0
+  fi
+
+  die "module not found: $name (local template missing; remote install not configured or failed)"
+}
+
+mod_remove() {
+  name=${1:-}
+  [ -n "$name" ] || die "usage: nx mod remove <name>"
+  valid_module_name "$name" || die "invalid module name: $name"
+
+  target="$NX_LITE_COMMANDS_DIR/$name"
+  if [ ! -f "$target" ]; then
+    die "module not installed: $name"
+  fi
+
+  rm -f "$target" || die "failed to remove module $name"
+  printf 'removed module: %s\n' "$name"
+}
+
+mod_main() {
+  sub=${1:-}
+  case "$sub" in
+    ""|help|--help|-h)
+      mod_usage
+      ;;
+    list)
+      mod_list
+      ;;
+    install)
+      shift
+      mod_install "${1:-}"
+      ;;
+    remove|rm|uninstall)
+      shift
+      mod_remove "${1:-}"
+      ;;
+    *)
+      printf 'nx: unknown mod command: %s\n\n' "$sub" >&2
+      mod_usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+run_module() {
+  cmd=$1
+  shift
+
+  script="$NX_LITE_COMMANDS_DIR/$cmd"
+  if [ -f "$script" ] && [ -x "$script" ]; then
+    exec "$script" "$@"
+  fi
+
+  printf 'nx: command not found: %s\n\n' "$cmd" >&2
+  printf 'Available commands:\n' >&2
+  print_command_list >&2
+  exit 127
+}
+
+main() {
+  cmd=${1:-}
+  case "$cmd" in
+    ""|help|--help|-h)
+      usage
+      ;;
+    init)
+      nx_init
+      ;;
+    mod)
+      shift
+      mod_main "$@"
+      ;;
+    *)
+      shift
+      run_module "$cmd" "$@"
+      ;;
+  esac
+}
+
+main "$@"

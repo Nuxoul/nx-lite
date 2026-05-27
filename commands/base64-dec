@@ -1,0 +1,116 @@
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function fail(message) {
+  print "base64-dec: " message > "/dev/stderr"
+  exit 1
+}
+
+function init_map(    i, c) {
+  alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  for (i = 1; i <= length(alphabet); i++) {
+    c = substr(alphabet, i, 1)
+    value[c] = i - 1
+  }
+}
+
+function clean_base64(s,    i, c, out) {
+  out = ""
+  for (i = 1; i <= length(s); i++) {
+    c = substr(s, i, 1)
+    if (c == " " || c == "\t" || c == "\r" || c == "\n") {
+      continue
+    }
+    out = out c
+  }
+  return out
+}
+
+BEGIN {
+  init_map()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  data = clean_base64(text)
+  len = length(data)
+  if (len == 0) {
+    exit 0
+  }
+  if (len % 4 != 0) {
+    fail("invalid base64 length")
+  }
+
+  out = ""
+  for (i = 1; i <= len; i += 4) {
+    c1 = substr(data, i, 1)
+    c2 = substr(data, i + 1, 1)
+    c3 = substr(data, i + 2, 1)
+    c4 = substr(data, i + 3, 1)
+
+    if (!(c1 in value) || !(c2 in value)) {
+      fail("invalid base64 input")
+    }
+
+    pad = 0
+    if (c3 == "=") {
+      if (c4 != "=") {
+        fail("invalid padding")
+      }
+      pad = 2
+      v3 = 0
+      v4 = 0
+    } else {
+      if (!(c3 in value)) {
+        fail("invalid base64 input")
+      }
+      v3 = value[c3]
+      if (c4 == "=") {
+        pad = 1
+        v4 = 0
+      } else {
+        if (!(c4 in value)) {
+          fail("invalid base64 input")
+        }
+        v4 = value[c4]
+      }
+    }
+
+    if (pad && i + 4 <= len) {
+      fail("padding is only allowed at the end")
+    }
+
+    v1 = value[c1]
+    v2 = value[c2]
+    b1 = v1 * 4 + int(v2 / 16)
+    b2 = (v2 % 16) * 16 + int(v3 / 4)
+    b3 = (v3 % 4) * 64 + v4
+
+    out = out sprintf("%c", b1)
+    if (pad < 2) {
+      out = out sprintf("%c", b2)
+    }
+    if (pad < 1) {
+      out = out sprintf("%c", b3)
+    }
+  }
+  printf "%s\n", out
+}
+'

@@ -1,0 +1,266 @@
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function fail(message) {
+  print "json-pretty: invalid JSON: " message " at position " pos > "/dev/stderr"
+  exit 1
+}
+
+function peek() {
+  return substr(src, pos, 1)
+}
+
+function skip_ws(    c) {
+  while (pos <= n) {
+    c = peek()
+    if (c == " " || c == "\t" || c == "\r" || c == "\n") {
+      pos++
+    } else {
+      break
+    }
+  }
+}
+
+function write_indent(level,    i) {
+  for (i = 0; i < level; i++) {
+    printf "  "
+  }
+}
+
+function is_hex(c) {
+  return index("0123456789abcdefABCDEF", c) > 0
+}
+
+function parse_string(    start, c, e, i) {
+  if (peek() != "\"") {
+    fail("expected string")
+  }
+  start = pos
+  pos++
+  while (pos <= n) {
+    c = peek()
+    if (c == "\"") {
+      pos++
+      return substr(src, start, pos - start)
+    }
+    if (c == "\\") {
+      pos++
+      if (pos > n) {
+        fail("unterminated escape")
+      }
+      e = peek()
+      if (e == "\"" || e == "\\" || e == "/" || e == "b" || e == "f" || e == "n" || e == "r" || e == "t") {
+        pos++
+      } else if (e == "u") {
+        pos++
+        for (i = 0; i < 4; i++) {
+          if (pos + i > n || !is_hex(substr(src, pos + i, 1))) {
+            fail("invalid unicode escape")
+          }
+        }
+        pos += 4
+      } else {
+        fail("invalid escape")
+      }
+    } else {
+      pos++
+    }
+  }
+  fail("unterminated string")
+}
+
+function parse_number(    start, c, digits) {
+  start = pos
+  if (peek() == "-") {
+    pos++
+  }
+  if (peek() == "0") {
+    pos++
+  } else if (peek() >= "1" && peek() <= "9") {
+    while (peek() >= "0" && peek() <= "9") {
+      pos++
+    }
+  } else {
+    fail("expected number")
+  }
+
+  if (peek() == ".") {
+    pos++
+    digits = 0
+    while (peek() >= "0" && peek() <= "9") {
+      pos++
+      digits++
+    }
+    if (!digits) {
+      fail("expected digits after decimal point")
+    }
+  }
+
+  c = peek()
+  if (c == "e" || c == "E") {
+    pos++
+    c = peek()
+    if (c == "+" || c == "-") {
+      pos++
+    }
+    digits = 0
+    while (peek() >= "0" && peek() <= "9") {
+      pos++
+      digits++
+    }
+    if (!digits) {
+      fail("expected exponent digits")
+    }
+  }
+
+  return substr(src, start, pos - start)
+}
+
+function parse_literal(lit) {
+  if (substr(src, pos, length(lit)) != lit) {
+    fail("expected " lit)
+  }
+  pos += length(lit)
+  return lit
+}
+
+function parse_value(level,    c) {
+  skip_ws()
+  c = peek()
+  if (c == "{") {
+    parse_object(level)
+  } else if (c == "[") {
+    parse_array(level)
+  } else if (c == "\"") {
+    printf "%s", parse_string()
+  } else if (c == "-" || (c >= "0" && c <= "9")) {
+    printf "%s", parse_number()
+  } else if (c == "t") {
+    printf "%s", parse_literal("true")
+  } else if (c == "f") {
+    printf "%s", parse_literal("false")
+  } else if (c == "n") {
+    printf "%s", parse_literal("null")
+  } else {
+    fail("expected value")
+  }
+}
+
+function parse_object(level,    first, key, c) {
+  printf "{"
+  pos++
+  skip_ws()
+  if (peek() == "}") {
+    pos++
+    printf "}"
+    return
+  }
+
+  first = 1
+  while (pos <= n) {
+    if (!first) {
+      printf ","
+    }
+    printf "\n"
+    write_indent(level + 1)
+    skip_ws()
+    key = parse_string()
+    skip_ws()
+    if (peek() != ":") {
+      fail("expected colon")
+    }
+    pos++
+    printf "%s: ", key
+    parse_value(level + 1)
+    skip_ws()
+    c = peek()
+    if (c == ",") {
+      pos++
+      first = 0
+      continue
+    }
+    if (c == "}") {
+      pos++
+      printf "\n"
+      write_indent(level)
+      printf "}"
+      return
+    }
+    fail("expected comma or object end")
+  }
+  fail("unterminated object")
+}
+
+function parse_array(level,    first, c) {
+  printf "["
+  pos++
+  skip_ws()
+  if (peek() == "]") {
+    pos++
+    printf "]"
+    return
+  }
+
+  first = 1
+  while (pos <= n) {
+    if (!first) {
+      printf ","
+    }
+    printf "\n"
+    write_indent(level + 1)
+    parse_value(level + 1)
+    skip_ws()
+    c = peek()
+    if (c == ",") {
+      pos++
+      first = 0
+      continue
+    }
+    if (c == "]") {
+      pos++
+      printf "\n"
+      write_indent(level)
+      printf "]"
+      return
+    }
+    fail("expected comma or array end")
+  }
+  fail("unterminated array")
+}
+
+BEGIN {
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    src = ENVIRON["NX_LITE_INPUT"]
+  }
+}
+
+!from_args {
+  src = src (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  if (src !~ /[^[:space:]]/) {
+    print "json-pretty: missing JSON input" > "/dev/stderr"
+    exit 1
+  }
+  pos = 1
+  n = length(src)
+  parse_value(0)
+  skip_ws()
+  if (pos <= n) {
+    fail("trailing data")
+  }
+  printf "\n"
+}
+'
