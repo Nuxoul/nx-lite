@@ -117,6 +117,13 @@ On Windows, the PowerShell installer writes three files into `~/.local/bin`:
 
 `nx.cmd` calls Git Bash to run the POSIX shell entrypoint, so PowerShell users can type `nx --help` directly after `~/.local/bin` is on `PATH`.
 
+The launcher looks for Git Bash in standard Git for Windows locations, in Git for Windows registry entries, beside the `git.exe` found on `PATH`, and finally as `bash.exe` on `PATH`. For portable or unusual Git installs, set `NX_LITE_BASH` to the full `bash.exe` path:
+
+```powershell
+$env:NX_LITE_BASH = "D:\Program Files\Git\bin\bash.exe"
+nx --help
+```
+
 Before publishing, or when using another branch/fork, override the raw base URL:
 
 ```sh

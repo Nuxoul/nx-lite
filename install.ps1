@@ -105,14 +105,64 @@ function Save-Url($Url, $Path) {
 }
 
 function Find-Bash {
+    if (-not [string]::IsNullOrWhiteSpace($env:NX_LITE_BASH)) {
+        if (Test-Path -LiteralPath $env:NX_LITE_BASH) {
+            return $env:NX_LITE_BASH
+        }
+    }
+
     $candidates = @(
         "C:\Program Files\Git\bin\bash.exe",
-        "C:\Program Files\Git\usr\bin\bash.exe"
+        "C:\Program Files\Git\usr\bin\bash.exe",
+        "C:\Program Files (x86)\Git\bin\bash.exe",
+        "C:\Program Files (x86)\Git\usr\bin\bash.exe"
     )
 
     foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate) {
             return $candidate
+        }
+    }
+
+    $registryKeys = @(
+        "HKCU:\SOFTWARE\GitForWindows",
+        "HKLM:\SOFTWARE\GitForWindows",
+        "HKLM:\SOFTWARE\WOW6432Node\GitForWindows"
+    )
+
+    foreach ($key in $registryKeys) {
+        try {
+            $installPath = (Get-ItemProperty -LiteralPath $key -ErrorAction Stop).InstallPath
+            if (-not [string]::IsNullOrWhiteSpace($installPath)) {
+                foreach ($relative in @("bin\bash.exe", "usr\bin\bash.exe")) {
+                    $candidate = Join-Path $installPath $relative
+                    if (Test-Path -LiteralPath $candidate) {
+                        return $candidate
+                    }
+                }
+            }
+        }
+        catch {
+            # Missing registry keys are expected on portable or custom Git installs.
+        }
+    }
+
+    $git = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($git -and $git.Source) {
+        $dir = Split-Path -Parent $git.Source
+        for ($i = 0; $i -lt 6 -and -not [string]::IsNullOrWhiteSpace($dir); $i++) {
+            foreach ($relative in @("bash.exe", "bin\bash.exe", "usr\bin\bash.exe")) {
+                $candidate = Join-Path $dir $relative
+                if (Test-Path -LiteralPath $candidate) {
+                    return $candidate
+                }
+            }
+
+            $parent = Split-Path -Parent $dir
+            if ($parent -eq $dir) {
+                break
+            }
+            $dir = $parent
         }
     }
 
@@ -143,14 +193,64 @@ function Write-WindowsLaunchers($BinDir) {
 $ErrorActionPreference = "Stop"
 
 function Find-NxLiteBash {
+    if (-not [string]::IsNullOrWhiteSpace($env:NX_LITE_BASH)) {
+        if (Test-Path -LiteralPath $env:NX_LITE_BASH) {
+            return $env:NX_LITE_BASH
+        }
+    }
+
     $candidates = @(
         "C:\Program Files\Git\bin\bash.exe",
-        "C:\Program Files\Git\usr\bin\bash.exe"
+        "C:\Program Files\Git\usr\bin\bash.exe",
+        "C:\Program Files (x86)\Git\bin\bash.exe",
+        "C:\Program Files (x86)\Git\usr\bin\bash.exe"
     )
 
     foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate) {
             return $candidate
+        }
+    }
+
+    $registryKeys = @(
+        "HKCU:\SOFTWARE\GitForWindows",
+        "HKLM:\SOFTWARE\GitForWindows",
+        "HKLM:\SOFTWARE\WOW6432Node\GitForWindows"
+    )
+
+    foreach ($key in $registryKeys) {
+        try {
+            $installPath = (Get-ItemProperty -LiteralPath $key -ErrorAction Stop).InstallPath
+            if (-not [string]::IsNullOrWhiteSpace($installPath)) {
+                foreach ($relative in @("bin\bash.exe", "usr\bin\bash.exe")) {
+                    $candidate = Join-Path $installPath $relative
+                    if (Test-Path -LiteralPath $candidate) {
+                        return $candidate
+                    }
+                }
+            }
+        }
+        catch {
+            # Missing registry keys are expected on portable or custom Git installs.
+        }
+    }
+
+    $git = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($git -and $git.Source) {
+        $dir = Split-Path -Parent $git.Source
+        for ($i = 0; $i -lt 6 -and -not [string]::IsNullOrWhiteSpace($dir); $i++) {
+            foreach ($relative in @("bash.exe", "bin\bash.exe", "usr\bin\bash.exe")) {
+                $candidate = Join-Path $dir $relative
+                if (Test-Path -LiteralPath $candidate) {
+                    return $candidate
+                }
+            }
+
+            $parent = Split-Path -Parent $dir
+            if ($parent -eq $dir) {
+                break
+            }
+            $dir = $parent
         }
     }
 
@@ -175,7 +275,7 @@ function Convert-ToGitBashPath($Path) {
 
 $bash = Find-NxLiteBash
 if (-not $bash) {
-    Write-Error "nx-lite needs Git Bash on Windows PowerShell. Install Git for Windows, then reopen PowerShell."
+    Write-Error "nx-lite needs Git Bash on Windows PowerShell. Install Git for Windows, add Git to PATH, or set NX_LITE_BASH to bash.exe."
     exit 1
 }
 
@@ -232,5 +332,5 @@ if ($env:Path -notlike "*$BinDir*") {
 
 if (-not $bash) {
     Write-Host ""
-    Write-Host "Note: bash/sh was not found. nx-lite is a POSIX shell tool; use it from WSL, Git Bash, Linux, or macOS."
+    Write-Host "Note: Git Bash was not found. Install Git for Windows, add Git to PATH, or set NX_LITE_BASH to bash.exe."
 }
