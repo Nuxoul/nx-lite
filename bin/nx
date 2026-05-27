@@ -1620,6 +1620,7 @@ download_url() {
 nx_upgrade() {
   raw_base=${1:-$NX_LITE_RAW_BASE}
   raw_base=${raw_base%/}
+  modules=$DEFAULT_MODULES
 
   [ -n "$raw_base" ] || die "usage: nx upgrade [raw-base-url]"
 
@@ -1632,7 +1633,27 @@ nx_upgrade() {
     || die "failed to mark $NX_LITE_BIN_DIR/nx executable"
   printf 'updated entrypoint: %s\n' "$NX_LITE_BIN_DIR/nx"
 
-  for name in $DEFAULT_MODULES; do
+  if new_modules=$(awk '
+    /^DEFAULT_MODULES="/ {
+      line = $0
+      sub(/^DEFAULT_MODULES="/, "", line)
+      sub(/"$/, "", line)
+      print line
+      found = 1
+      exit
+    }
+    END {
+      if (!found) {
+        exit 1
+      }
+    }
+  ' "$NX_LITE_BIN_DIR/nx" 2>/dev/null); then
+    modules=$new_modules
+  else
+    printf 'nx: warning: could not read new default module list; using current list\n' >&2
+  fi
+
+  for name in $modules; do
     command_file="$NX_LITE_COMMANDS_DIR/$name"
     template_file="$NX_LITE_TEMPLATES_DIR/$name"
 

@@ -143,6 +143,20 @@ if command -v curl >/dev/null 2>&1; then
   assert_eq 'aGVsbG8=' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64 hello
   assert_eq 'a%20b%2Bc' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" url 'a b+c'
   assert_eq '512' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" pow2 300
+
+  awk '
+    /^DEFAULT_MODULES="/ {
+      print "DEFAULT_MODULES=\"base64 base64-enc base64-dec json-pretty url-enc url-dec md5\""
+      next
+    }
+    { print }
+  ' "$SANDBOX/bin/nx" > "$SANDBOX/bin/nx.old-list"
+  mv "$SANDBOX/bin/nx.old-list" "$SANDBOX/bin/nx"
+  chmod +x "$SANDBOX/bin/nx"
+  rm -f "$SANDBOX/nx-lite/commands/pow2" "$SANDBOX/nx-lite/templates/pow2"
+
+  env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" upgrade "$raw_base" >/dev/null
+  assert_eq '512' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" pow2 300
   rm -rf "$RAW_SANDBOX"
 fi
 
