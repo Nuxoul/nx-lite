@@ -7,6 +7,7 @@ NX_LITE_BIN_DIR=${NX_LITE_BIN_DIR:-$HOME/.local/bin}
 NX_LITE_COMMANDS_DIR=${NX_LITE_COMMANDS_DIR:-$NX_LITE_HOME/commands}
 NX_LITE_TEMPLATES_DIR=${NX_LITE_TEMPLATES_DIR:-$NX_LITE_HOME/templates}
 NX_LITE_REMOTE_BASE=${NX_LITE_REMOTE_BASE:-}
+NX_LITE_RAW_BASE=${NX_LITE_RAW_BASE:-https://raw.githubusercontent.com/Nuxoul/nx-lite/main}
 
 DEFAULT_MODULES="base64-enc base64-dec json-pretty url-enc url-dec md5"
 
@@ -69,6 +70,7 @@ nx-lite - modular terminal command toolbox
 Usage:
   nx <command> [args...]
   nx init
+  nx upgrade [raw-base-url]
   nx help | nx --help
   nx mod <list|install|remove> [name]
 
@@ -941,6 +943,81 @@ nx_init() {
   printf '\nnx-lite initialized.\n'
 }
 
+download_url() {
+  url=$1
+  target=$2
+  tmp="$target.download.$$"
+  attempt=1
+  last_error=1
+
+  while [ "$attempt" -le 3 ]; do
+    rm -f "$tmp"
+    if command -v curl >/dev/null 2>&1; then
+      if curl -fsSL "$url" -o "$tmp"; then
+        last_error=0
+      else
+        last_error=1
+      fi
+    elif command -v wget >/dev/null 2>&1; then
+      if wget -qO "$tmp" "$url"; then
+        last_error=0
+      else
+        last_error=1
+      fi
+    else
+      rm -f "$tmp"
+      die "upgrade needs curl or wget"
+    fi
+
+    if [ "$last_error" -eq 0 ] && [ -s "$tmp" ]; then
+      mv "$tmp" "$target" || {
+        rm -f "$tmp"
+        return 1
+      }
+      return 0
+    fi
+
+    rm -f "$tmp"
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+
+  return 1
+}
+
+nx_upgrade() {
+  raw_base=${1:-$NX_LITE_RAW_BASE}
+  raw_base=${raw_base%/}
+
+  [ -n "$raw_base" ] || die "usage: nx upgrade [raw-base-url]"
+
+  ensure_dirs
+  printf 'upgrading nx-lite from: %s\n' "$raw_base"
+
+  download_url "$raw_base/bin/nx" "$NX_LITE_BIN_DIR/nx" \
+    || die "failed to download nx entrypoint"
+  chmod +x "$NX_LITE_BIN_DIR/nx" \
+    || die "failed to mark $NX_LITE_BIN_DIR/nx executable"
+  printf 'updated entrypoint: %s\n' "$NX_LITE_BIN_DIR/nx"
+
+  for name in $DEFAULT_MODULES; do
+    command_file="$NX_LITE_COMMANDS_DIR/$name"
+    template_file="$NX_LITE_TEMPLATES_DIR/$name"
+
+    download_url "$raw_base/commands/$name" "$command_file" \
+      || die "failed to download module $name"
+    chmod +x "$command_file" \
+      || die "failed to mark $command_file executable"
+    cp "$command_file" "$template_file" \
+      || die "failed to update template $name"
+    chmod +x "$template_file" \
+      || die "failed to mark $template_file executable"
+    printf 'updated module: %s\n' "$name"
+  done
+
+  printf '\nnx-lite upgraded.\n'
+}
+
 download_remote_module() {
   name=$1
   target=$2
@@ -1076,6 +1153,10 @@ main() {
       ;;
     init)
       nx_init
+      ;;
+    upgrade|update|self-update)
+      shift
+      nx_upgrade "${1:-}"
       ;;
     mod)
       shift

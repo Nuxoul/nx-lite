@@ -60,4 +60,20 @@ assert_contains "$module_list" 'base64-enc'
 assert_contains "$module_list" 'json-pretty'
 assert_contains "$module_list" 'md5'
 
+if command -v curl >/dev/null 2>&1; then
+  RAW_SANDBOX="/tmp/nx-lite-smoke-$$"
+  rm -rf "$RAW_SANDBOX"
+  mkdir -p "$RAW_SANDBOX"
+  cp -R "$ROOT/bin" "$ROOT/commands" "$RAW_SANDBOX/"
+  if raw_path=$(cd "$RAW_SANDBOX" && pwd -W 2>/dev/null); then
+    raw_path=$(printf '%s' "$raw_path" | awk '{ gsub(/ /, "%20"); print }')
+    raw_base="file:///$raw_path"
+  else
+    raw_base="file://$RAW_SANDBOX"
+  fi
+  env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" upgrade "$raw_base" >/dev/null
+  assert_eq 'aGVsbG8=' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64-enc hello
+  rm -rf "$RAW_SANDBOX"
+fi
+
 printf 'smoke tests passed\n'

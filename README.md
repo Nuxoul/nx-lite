@@ -158,6 +158,18 @@ nx --help
 nx mod list
 ```
 
+Upgrade nx-lite later:
+
+```sh
+nx upgrade
+```
+
+Use another raw base URL, fork, or branch:
+
+```sh
+nx upgrade "https://raw.githubusercontent.com/Nuxoul/nx-lite/main"
+```
+
 Development smoke test:
 
 ```sh
@@ -211,6 +223,37 @@ nx mod list
 ```
 
 ## Module Management
+
+Upgrade the core entrypoint and default modules:
+
+```sh
+nx upgrade
+```
+
+Aliases are also accepted:
+
+```sh
+nx update
+nx self-update
+```
+
+By default, upgrade downloads from:
+
+```text
+https://raw.githubusercontent.com/Nuxoul/nx-lite/main
+```
+
+Override it for forks or branches:
+
+```sh
+NX_LITE_RAW_BASE="https://raw.githubusercontent.com/<user>/<repo>/<branch>" nx upgrade
+```
+
+Or pass the URL directly:
+
+```sh
+nx upgrade "https://raw.githubusercontent.com/<user>/<repo>/<branch>"
+```
 
 List installed executable modules:
 
