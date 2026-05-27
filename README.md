@@ -109,6 +109,14 @@ PowerShell bootstrap style:
 [System.Text.Encoding]::GetEncoding("utf-8").GetString($(Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Nuxoul/nx-lite/main/install.ps1").RawContentStream.ToArray()) | Invoke-Expression
 ```
 
+On Windows, the PowerShell installer writes three files into `~/.local/bin`:
+
+- `nx`: the POSIX shell entrypoint
+- `nx.cmd`: a PowerShell-friendly launcher
+- `nx.ps1`: the launcher implementation
+
+`nx.cmd` calls Git Bash to run the POSIX shell entrypoint, so PowerShell users can type `nx --help` directly after `~/.local/bin` is on `PATH`.
+
 Before publishing, or when using another branch/fork, override the raw base URL:
 
 ```sh

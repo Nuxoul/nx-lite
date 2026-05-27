@@ -135,6 +135,67 @@ function Convert-ToGitBashPath($Path) {
     return $full
 }
 
+function Write-WindowsLaunchers($BinDir) {
+    $ps1Path = Join-Path $BinDir "nx.ps1"
+    $cmdPath = Join-Path $BinDir "nx.cmd"
+
+    $ps1 = @'
+$ErrorActionPreference = "Stop"
+
+function Find-NxLiteBash {
+    $candidates = @(
+        "C:\Program Files\Git\bin\bash.exe",
+        "C:\Program Files\Git\usr\bin\bash.exe"
+    )
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+
+    $cmd = Get-Command bash.exe -ErrorAction SilentlyContinue
+    if ($cmd) {
+        $source = $cmd.Source
+        if ($source -notlike "*\Windows\System32\bash.exe" -and $source -notlike "*\WindowsApps\bash.exe") {
+            return $source
+        }
+    }
+
+    return $null
+}
+
+function Convert-ToGitBashPath($Path) {
+    $full = [System.IO.Path]::GetFullPath($Path).Replace("\", "/")
+    if ($full -match "^([A-Za-z]):/(.*)$") {
+        return "/$($Matches[1].ToLower())/$($Matches[2])"
+    }
+    return $full
+}
+
+$bash = Find-NxLiteBash
+if (-not $bash) {
+    Write-Error "nx-lite needs Git Bash on Windows PowerShell. Install Git for Windows, then reopen PowerShell."
+    exit 1
+}
+
+$nxScript = Join-Path $PSScriptRoot "nx"
+$nxScriptForBash = Convert-ToGitBashPath $nxScript
+
+& $bash --noprofile --norc "$nxScriptForBash" @args
+exit $LASTEXITCODE
+'@
+
+    $cmd = @'
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0nx.ps1" %*
+exit /b %ERRORLEVEL%
+'@
+
+    [System.IO.File]::WriteAllText($ps1Path, $ps1, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($cmdPath, $cmd, [System.Text.ASCIIEncoding]::new())
+}
+
 New-Dir $BinDir
 New-Dir $NxHome
 New-Dir $CommandsDir
@@ -142,6 +203,7 @@ New-Dir $TemplatesDir
 
 $base = $RawBase.TrimEnd("/")
 Save-Url "$base/bin/nx" $Entrypoint
+Write-WindowsLaunchers $BinDir
 
 foreach ($name in $Modules) {
     $commandPath = Join-Path $CommandsDir $name
@@ -159,6 +221,7 @@ if ($bash) {
 
 Write-Host "nx-lite installed:"
 Write-Host "  entrypoint: $Entrypoint"
+Write-Host "  powershell: $(Join-Path $BinDir "nx.cmd")"
 Write-Host "  commands:   $CommandsDir"
 
 if ($env:Path -notlike "*$BinDir*") {
