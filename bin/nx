@@ -9,7 +9,7 @@ NX_LITE_TEMPLATES_DIR=${NX_LITE_TEMPLATES_DIR:-$NX_LITE_HOME/templates}
 NX_LITE_REMOTE_BASE=${NX_LITE_REMOTE_BASE:-}
 NX_LITE_RAW_BASE=${NX_LITE_RAW_BASE:-https://raw.githubusercontent.com/Nuxoul/nx-lite/main}
 
-DEFAULT_MODULES="base64-enc base64-dec json-pretty url-enc url-dec md5"
+DEFAULT_MODULES="base64 base64-enc base64-dec json-pretty url-enc url-dec md5"
 
 die() {
   printf 'nx: %s\n' "$*" >&2
@@ -35,7 +35,7 @@ valid_module_name() {
 
 is_default_module() {
   case "${1:-}" in
-    base64-enc|base64-dec|json-pretty|url-enc|url-dec|md5) return 0 ;;
+    base64|base64-enc|base64-dec|json-pretty|url-enc|url-dec|md5) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -105,6 +105,56 @@ write_default_template() {
   target=$2
 
   case "$name" in
+    base64)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx base64 [text...]
+  nx base64 -d [base64...]
+  nx base64 decode [base64...]
+
+Default mode is encode.
+EOF
+}
+
+mode=enc
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -d|--decode|dec|decode)
+    mode=dec
+    shift
+    ;;
+  -e|--encode|enc|encode)
+    mode=enc
+    shift
+    ;;
+  --)
+    shift
+    ;;
+esac
+
+case "$0" in
+  */*) script_dir=${0%/*} ;;
+  *) script_dir=. ;;
+esac
+
+script="$script_dir/base64-$mode"
+if [ ! -x "$script" ]; then
+  printf 'base64: missing helper module: %s\n' "$script" >&2
+  exit 127
+fi
+
+exec "$script" "$@"
+NX_LITE_MODULE_EOF
+      ;;
     base64-enc)
       cat > "$target" <<'NX_LITE_MODULE_EOF'
 #!/usr/bin/env sh

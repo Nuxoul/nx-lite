@@ -27,7 +27,7 @@ $BinDir = if ($env:NX_LITE_BIN_DIR) { $env:NX_LITE_BIN_DIR } else { Join-Path (J
 $CommandsDir = Join-Path $NxHome "commands"
 $TemplatesDir = Join-Path $NxHome "templates"
 $Entrypoint = Join-Path $BinDir "nx"
-$Modules = @("base64-enc", "base64-dec", "json-pretty", "url-enc", "url-dec", "md5")
+$Modules = @("base64", "base64-enc", "base64-dec", "json-pretty", "url-enc", "url-dec", "md5")
 $DownloadHeaders = @{
     "User-Agent" = "nx-lite-installer"
 }

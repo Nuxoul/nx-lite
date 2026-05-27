@@ -15,6 +15,7 @@ nx-lite/
 |-- bin/
 |   `-- nx
 |-- commands/
+|   |-- base64
 |   |-- base64-enc
 |   |-- base64-dec
 |   |-- json-pretty
@@ -22,6 +23,7 @@ nx-lite/
 |   |-- url-dec
 |   `-- md5
 |-- templates/
+|   |-- base64
 |   |-- base64-enc
 |   |-- base64-dec
 |   |-- json-pretty
@@ -42,6 +44,7 @@ After installation, the runtime layout is:
 |       `-- nx
 `-- .nx-lite/
     |-- commands/
+    |   |-- base64
     |   |-- base64-enc
     |   |-- base64-dec
     |   |-- json-pretty
@@ -49,6 +52,7 @@ After installation, the runtime layout is:
     |   |-- url-dec
     |   `-- md5
     `-- templates/
+        |-- base64
         |-- base64-enc
         |-- base64-dec
         |-- json-pretty
@@ -71,8 +75,9 @@ After installation, the runtime layout is:
 - built-in default module templates
 - reserved remote install support through `NX_LITE_REMOTE_BASE`
 
-The default module implementations are complete executable POSIX `sh` scripts powered by `awk`:
+The default modules are executable POSIX `sh` scripts:
 
+- `commands/base64`
 - `commands/base64-enc`
 - `commands/base64-dec`
 - `commands/json-pretty`
@@ -186,6 +191,7 @@ sh tests/smoke.sh
 Expected default modules:
 
 ```text
+base64
 base64-dec
 base64-enc
 json-pretty
@@ -197,7 +203,7 @@ url-enc
 ## Usage Examples
 
 ```sh
-nx base64-enc "hello"
+nx base64 "hello"
 ```
 
 ```text
@@ -205,7 +211,7 @@ aGVsbG8=
 ```
 
 ```sh
-nx base64-dec "SGVsbG8="
+nx base64 -d "SGVsbG8="
 ```
 
 ```text
@@ -222,7 +228,11 @@ nx json-pretty '{"a":1}'
 }
 ```
 
+Compatibility aliases:
+
 ```sh
+nx base64-enc "hello"
+nx base64-dec "SGVsbG8="
 nx url-enc "a b+c"
 nx url-dec "a%20b%2Bc"
 nx md5 "hello"

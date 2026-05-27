@@ -1,0 +1,46 @@
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx base64 [text...]
+  nx base64 -d [base64...]
+  nx base64 decode [base64...]
+
+Default mode is encode.
+EOF
+}
+
+mode=enc
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -d|--decode|dec|decode)
+    mode=dec
+    shift
+    ;;
+  -e|--encode|enc|encode)
+    mode=enc
+    shift
+    ;;
+  --)
+    shift
+    ;;
+esac
+
+case "$0" in
+  */*) script_dir=${0%/*} ;;
+  *) script_dir=. ;;
+esac
+
+script="$script_dir/base64-$mode"
+if [ ! -x "$script" ]; then
+  printf 'base64: missing helper module: %s\n' "$script" >&2
+  exit 127
+fi
+
+exec "$script" "$@"
