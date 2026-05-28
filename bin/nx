@@ -9,6 +9,7 @@ NX_LITE_TEMPLATES_DIR=${NX_LITE_TEMPLATES_DIR:-$NX_LITE_HOME/templates}
 NX_LITE_REMOTE_BASE=${NX_LITE_REMOTE_BASE:-}
 NX_LITE_RAW_BASE=${NX_LITE_RAW_BASE:-https://raw.githubusercontent.com/Nuxoul/nx-lite/main}
 NX_LITE_VERSION=${NX_LITE_VERSION:-0.3.0}
+NX_LITE_CLIP=${NX_LITE_CLIP:-1}
 
 DEFAULT_MODULES="base64 base64-enc base64-dec angle color guid hash json json-pretty pow2 url url-enc url-dec md5"
 
@@ -61,6 +62,24 @@ print_command_list() {
     printf '%s\n' "$commands" | sed 's/^/  /'
   else
     printf '  (no commands installed; run nx init)\n'
+  fi
+}
+
+copy_to_clipboard() {
+  [ "${NX_LITE_CLIP:-1}" != "0" ] || return 0
+
+  if command -v clip.exe >/dev/null 2>&1; then
+    printf '%s' "$1" | clip.exe >/dev/null 2>&1
+  elif command -v pbcopy >/dev/null 2>&1; then
+    printf '%s' "$1" | pbcopy >/dev/null 2>&1
+  elif command -v wl-copy >/dev/null 2>&1; then
+    printf '%s' "$1" | wl-copy >/dev/null 2>&1
+  elif command -v xclip >/dev/null 2>&1; then
+    printf '%s' "$1" | xclip -selection clipboard >/dev/null 2>&1
+  elif command -v xsel >/dev/null 2>&1; then
+    printf '%s' "$1" | xsel --clipboard --input >/dev/null 2>&1
+  else
+    return 0
   fi
 }
 
@@ -1820,11 +1839,25 @@ run_module() {
         guid)
           ;;
         *)
-          exec "$script" --help
+          "$script" --help
+          exit $?
           ;;
       esac
     fi
-    exec "$script" "$@"
+
+    output=$("$script" "$@")
+    status=$?
+    if [ "$status" -eq 0 ]; then
+      if [ -n "$output" ]; then
+        printf '%s\n' "$output"
+        copy_to_clipboard "$output"
+      fi
+    else
+      if [ -n "$output" ]; then
+        printf '%s\n' "$output"
+      fi
+    fi
+    exit "$status"
   fi
 
   printf 'nx: command not found: %s\n' "$cmd" >&2
