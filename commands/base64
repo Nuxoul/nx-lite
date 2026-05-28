@@ -9,6 +9,10 @@ Usage:
   nx base64 -d [base64...]
   nx base64 decode [base64...]
 
+Example:
+  nx base64 "hello"
+  nx base64 -d "aGVsbG8="
+
 Default mode is encode.
 EOF
 }

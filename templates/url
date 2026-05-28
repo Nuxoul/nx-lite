@@ -9,6 +9,10 @@ Usage:
   nx url -d [url-encoded...]
   nx url decode [url-encoded...]
 
+Example:
+  nx url "a b+c"
+  nx url -d "a%20b%2Bc"
+
 Default mode is encode.
 EOF
 }

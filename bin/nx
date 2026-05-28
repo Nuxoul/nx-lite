@@ -8,6 +8,7 @@ NX_LITE_COMMANDS_DIR=${NX_LITE_COMMANDS_DIR:-$NX_LITE_HOME/commands}
 NX_LITE_TEMPLATES_DIR=${NX_LITE_TEMPLATES_DIR:-$NX_LITE_HOME/templates}
 NX_LITE_REMOTE_BASE=${NX_LITE_REMOTE_BASE:-}
 NX_LITE_RAW_BASE=${NX_LITE_RAW_BASE:-https://raw.githubusercontent.com/Nuxoul/nx-lite/main}
+NX_LITE_VERSION=${NX_LITE_VERSION:-0.3.0}
 
 DEFAULT_MODULES="base64 base64-enc base64-dec angle color guid hash json json-pretty pow2 url url-enc url-dec md5"
 
@@ -66,6 +67,7 @@ print_command_list() {
 usage() {
   cat <<EOF
 nx-lite - modular terminal command toolbox
+version: $NX_LITE_VERSION
 
 Usage:
   nx <command> [args...]
@@ -73,14 +75,7 @@ Usage:
   nx upgrade [raw-base-url]
   nx help | nx --help
   nx mod <list|install|remove> [name]
-
-Directories:
-  commands:  $NX_LITE_COMMANDS_DIR
-  templates: $NX_LITE_TEMPLATES_DIR
-
-Available commands:
 EOF
-  print_command_list
 }
 
 mod_usage() {
@@ -117,6 +112,10 @@ Usage:
   nx base64 [text...]
   nx base64 -d [base64...]
   nx base64 decode [base64...]
+
+Example:
+  nx base64 "hello"
+  nx base64 -d "aGVsbG8="
 
 Default mode is encode.
 EOF
@@ -344,6 +343,10 @@ usage() {
 Usage:
   nx angle rad <degrees>
   nx angle deg <radians>
+
+Example:
+  nx angle rad 90
+  nx angle deg 3.141592653589793
 EOF
 }
 
@@ -396,6 +399,10 @@ Usage:
   nx color <#rgb|#rrggbb|rgb|rrggbb>
   nx color rgb <r> <g> <b>
   nx color float <r> <g> <b>
+
+Example:
+  nx color "#FF8040"
+  nx color rgb 255 128 64
 EOF
 }
 
@@ -508,6 +515,10 @@ Usage:
   nx guid upper
   nx guid no-dash
   nx guid upper no-dash
+
+Example:
+  nx guid
+  nx guid upper no-dash
 EOF
 }
 
@@ -587,6 +598,10 @@ Usage:
   nx hash sha1 [file...]
   nx hash md5 [file...]
   nx hash -a <sha256|sha1|md5> [file...]
+
+Example:
+  nx hash README.md
+  nx hash md5 README.md
 
 Default algorithm is sha256.
 EOF
@@ -746,6 +761,9 @@ usage() {
 Usage:
   nx json [json...]
   nx json pretty [json...]
+
+Example:
+  nx json '{"a":1}'
 
 Default mode is pretty.
 EOF
@@ -1063,6 +1081,10 @@ Usage:
   nx pow2 down <number>
   nx pow2 check <number>
 
+Example:
+  nx pow2 300
+  nx pow2 check 512
+
 Default mode is up.
 EOF
 }
@@ -1142,6 +1164,10 @@ Usage:
   nx url [text...]
   nx url -d [url-encoded...]
   nx url decode [url-encoded...]
+
+Example:
+  nx url "a b+c"
+  nx url -d "a%20b%2Bc"
 
 Default mode is encode.
 EOF
@@ -1789,12 +1815,19 @@ run_module() {
 
   script="$NX_LITE_COMMANDS_DIR/$cmd"
   if [ -f "$script" ] && [ -x "$script" ]; then
+    if [ "$#" -eq 0 ]; then
+      case "$cmd" in
+        guid)
+          ;;
+        *)
+          exec "$script" --help
+          ;;
+      esac
+    fi
     exec "$script" "$@"
   fi
 
-  printf 'nx: command not found: %s\n\n' "$cmd" >&2
-  printf 'Available commands:\n' >&2
-  print_command_list >&2
+  printf 'nx: command not found: %s\n' "$cmd" >&2
   exit 127
 }
 
@@ -1803,6 +1836,12 @@ main() {
   case "$cmd" in
     ""|help|--help|-h)
       usage
+      ;;
+    version|--version|-v)
+      printf '%s\n' "$NX_LITE_VERSION"
+      ;;
+    list|ls)
+      mod_list
       ;;
     init)
       nx_init

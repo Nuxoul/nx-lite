@@ -11,6 +11,10 @@ Usage:
   nx hash md5 [file...]
   nx hash -a <sha256|sha1|md5> [file...]
 
+Example:
+  nx hash README.md
+  nx hash md5 README.md
+
 Default algorithm is sha256.
 EOF
 }

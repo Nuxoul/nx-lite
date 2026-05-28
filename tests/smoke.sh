@@ -35,6 +35,18 @@ assert_contains() {
   esac
 }
 
+assert_not_contains() {
+  haystack=$1
+  needle=$2
+  case "$haystack" in
+    *"$needle"*)
+      printf 'unexpected text: %s\n' "$needle" >&2
+      printf '%s\n' "$haystack" >&2
+      exit 1
+      ;;
+  esac
+}
+
 assert_eq 'aGVsbG8=' ./commands/base64-enc hello
 assert_eq 'Hello' ./commands/base64-dec SGVsbG8=
 assert_eq 'aGVsbG8=' ./commands/base64 hello
@@ -102,6 +114,27 @@ mkdir -p "$SANDBOX"
 printf 'hello' > "$HASH_FILE"
 
 NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh ./bin/nx init >/dev/null
+
+help_output=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx")
+assert_contains "$help_output" 'nx-lite - modular terminal command toolbox'
+assert_contains "$help_output" 'version:'
+assert_contains "$help_output" 'nx upgrade [raw-base-url]'
+assert_not_contains "$help_output" 'Available commands:'
+assert_not_contains "$help_output" 'commands:'
+
+unknown_output=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" __missing__ 2>&1 || true)
+if [ "$unknown_output" != 'nx: command not found: __missing__' ]; then
+  printf 'unexpected unknown command output:\n%s\n' "$unknown_output" >&2
+  exit 1
+fi
+
+top_list=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" list)
+assert_contains "$top_list" 'Installed nx-lite modules:'
+assert_contains "$top_list" 'base64'
+
+base64_usage=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64)
+assert_contains "$base64_usage" 'Usage:'
+assert_contains "$base64_usage" 'Example:'
 
 assert_eq 'aGVsbG8=' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64-enc hello
 assert_eq 'Hello' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64-dec SGVsbG8=

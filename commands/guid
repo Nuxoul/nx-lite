@@ -9,6 +9,10 @@ Usage:
   nx guid upper
   nx guid no-dash
   nx guid upper no-dash
+
+Example:
+  nx guid
+  nx guid upper no-dash
 EOF
 }
 

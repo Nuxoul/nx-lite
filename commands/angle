@@ -7,6 +7,10 @@ usage() {
 Usage:
   nx angle rad <degrees>
   nx angle deg <radians>
+
+Example:
+  nx angle rad 90
+  nx angle deg 3.141592653589793
 EOF
 }
 

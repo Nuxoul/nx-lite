@@ -8,6 +8,9 @@ Usage:
   nx json [json...]
   nx json pretty [json...]
 
+Example:
+  nx json '{"a":1}'
+
 Default mode is pretty.
 EOF
 }

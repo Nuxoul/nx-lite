@@ -8,6 +8,10 @@ Usage:
   nx color <#rgb|#rrggbb|rgb|rrggbb>
   nx color rgb <r> <g> <b>
   nx color float <r> <g> <b>
+
+Example:
+  nx color "#FF8040"
+  nx color rgb 255 128 64
 EOF
 }
 

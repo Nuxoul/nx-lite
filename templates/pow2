@@ -10,6 +10,10 @@ Usage:
   nx pow2 down <number>
   nx pow2 check <number>
 
+Example:
+  nx pow2 300
+  nx pow2 check 512
+
 Default mode is up.
 EOF
 }
