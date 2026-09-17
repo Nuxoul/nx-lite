@@ -206,6 +206,9 @@ stdout is a TTY. Color is automatically disabled when output is piped. Set
 `NO_COLOR` or `NX_LITE_COLOR=never` to disable it, or use
 `NX_LITE_COLOR=always` to force it:
 
+Windows Terminal is detected automatically when running through the PowerShell
+launcher.
+
 ```sh
 NO_COLOR=1 nx --help
 NX_LITE_COLOR=always nx doctor

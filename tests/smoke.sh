@@ -128,6 +128,15 @@ assert_not_contains "$help_output" 'commands:'
 plain_help=$(env NO_COLOR=1 NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" --help)
 assert_not_contains "$plain_help" "$(printf '\033')"
 
+windows_terminal_help=$(env WT_SESSION=1 NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" --help)
+case "$windows_terminal_help" in
+  *"$(printf '\033')"*) ;;
+  *)
+    printf 'Windows Terminal color detection did not enable colors\n' >&2
+    exit 1
+    ;;
+esac
+
 unknown_output=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" __missing__ 2>&1 || true)
 if [ "$unknown_output" != 'nx: command not found: __missing__' ]; then
   printf 'unexpected unknown command output:\n%s\n' "$unknown_output" >&2
