@@ -13,7 +13,12 @@ nx <command> [args...]
 ```text
 nx-lite/
 |-- bin/
-|   `-- nx
+|   `-- nx                  generated single-file entrypoint
+|-- lib/
+|   `-- nx/
+|       |-- core.sh
+|       |-- ui.sh
+|       `-- lifecycle.sh
 |-- commands/
 |   |-- base64
 |   |-- base64-enc
@@ -46,6 +51,9 @@ nx-lite/
 |   `-- md5
 |-- tests/
 |   `-- smoke.sh
+|-- tools/
+|   |-- build.sh
+|   `-- sync-modules.sh
 `-- README.md
 ```
 
@@ -57,6 +65,11 @@ After installation, the runtime layout is:
 |   `-- bin/
 |       `-- nx
 `-- .nx-lite/
+    |-- runtime/
+    |   |-- core.sh
+    |   |-- ui.sh
+    |   |-- default-modules.sh
+    |   `-- lifecycle.sh
     |-- commands/
     |   |-- base64
     |   |-- base64-enc
@@ -91,12 +104,16 @@ After installation, the runtime layout is:
 
 ## Files
 
-`bin/nx` is the complete source for the target entrypoint `~/.local/bin/nx`. It is a POSIX `sh` script and includes:
+`bin/nx` is the small POSIX `sh` launcher for `~/.local/bin/nx`. Installers
+download the runtime files explicitly under `~/.nx-lite/runtime/`, and the
+runtime provides:
 
 - `nx init`
 - `nx help [command]` and `nx --help`
 - `nx doctor`
 - `nx --no-clip <command> [args...]`
+- `nx completion <bash|zsh|powershell>`
+- `nx path status`
 - `nx mod --help`
 - `nx mod list`
 - `nx mod install <name>`
@@ -201,6 +218,31 @@ nx doctor
 nx help base64
 ```
 
+Short aliases are available for frequent operations:
+
+```sh
+nx b64 "hello"
+nx b64d "aGVsbG8="
+nx jp '{"name":"nx-lite"}'
+nx uuid
+nx sha256 README.md
+nx p2 300
+```
+
+Inspect a module and its aliases:
+
+```sh
+nx mod info b64
+```
+
+Generate shell completion code:
+
+```sh
+eval "$(nx completion bash)"
+eval "$(nx completion zsh)"
+nx completion powershell | Out-String | Invoke-Expression
+```
+
 Interactive help and diagnostics use a small amount of terminal color when
 stdout is a TTY. Color is automatically disabled when output is piped. Set
 `NO_COLOR` or `NX_LITE_COLOR=never` to disable it, or use
@@ -253,18 +295,29 @@ Development smoke test:
 sh tests/smoke.sh
 ```
 
-Command sources are maintained only in `commands/`. The matching files in
-`templates/` and the embedded default modules in `bin/nx` are generated
-artifacts. After changing a command, synchronize them with:
+Command sources are maintained in `commands/` and `lib/nx/`. The matching
+files in `templates/` and the package in `dist/` are generated artifacts. The
+runtime source is organized into:
+
+```text
+lib/nx/
+├── core.sh
+├── ui.sh
+├── default-modules.sh
+└── lifecycle.sh
+```
+
+After changing a command or runtime source, build the distributable package
+with:
 
 ```sh
-sh tools/sync-modules.sh
+sh tools/build.sh
 ```
 
 CI and the smoke test use `--check` to reject stale generated files:
 
 ```sh
-sh tools/sync-modules.sh --check
+sh tools/build.sh --check
 ```
 
 Expected default modules:
@@ -418,6 +471,12 @@ Or pass the URL directly:
 nx upgrade "https://raw.githubusercontent.com/<user>/<repo>/<branch>"
 ```
 
+Upgrades are staged under `~/.nx-lite/.upgrade-<pid>/`. The runtime and
+module directories are replaced only after all requested files download
+successfully. The next launcher invocation activates a pending runtime update,
+so the shell process performing the upgrade never replaces files it is
+currently sourcing.
+
 List installed executable modules:
 
 ```sh
@@ -433,7 +492,7 @@ nx mod install <name>
 Install lookup order:
 
 1. `~/.nx-lite/templates/<name>`
-2. built-in default templates in `~/.local/bin/nx`
+2. built-in default templates in `~/.nx-lite/runtime/default-modules.sh`
 3. remote URL when `NX_LITE_REMOTE_BASE` is set
 
 Remove a module:

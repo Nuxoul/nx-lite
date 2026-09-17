@@ -1,0 +1,1446 @@
+write_default_template() {
+  name=$1
+  target=$2
+
+  case "$name" in
+    angle)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx angle rad <degrees>
+  nx angle deg <radians>
+
+Example:
+  nx angle rad 90
+  nx angle deg 3.141592653589793
+EOF
+}
+
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+esac
+
+mode=${1:-}
+value=${2:-}
+
+[ -n "$mode" ] && [ -n "$value" ] || {
+  usage >&2
+  exit 1
+}
+
+LC_ALL=C awk -v mode="$mode" -v value="$value" '
+function fail(message) {
+  print "angle: " message > "/dev/stderr"
+  exit 1
+}
+
+BEGIN {
+  if (value !~ /^-?([0-9]+|[0-9]*\.[0-9]+)$/) {
+    fail("expected a number")
+  }
+  pi = atan2(0, -1)
+  if (mode == "rad" || mode == "radian" || mode == "radians") {
+    printf "%.10g\n", (value + 0) * pi / 180
+  } else if (mode == "deg" || mode == "degree" || mode == "degrees") {
+    printf "%.10g\n", (value + 0) * 180 / pi
+  } else {
+    fail("expected rad or deg")
+  }
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    base64)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx base64 [text...]
+  nx base64 -d [base64...]
+  nx base64 decode [base64...]
+
+Example:
+  nx base64 "hello"
+  nx base64 -d "aGVsbG8="
+
+Default mode is encode.
+EOF
+}
+
+mode=enc
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -d|--decode|dec|decode)
+    mode=dec
+    shift
+    ;;
+  -e|--encode|enc|encode)
+    mode=enc
+    shift
+    ;;
+  --)
+    shift
+    ;;
+esac
+
+case "$0" in
+  */*) script_dir=${0%/*} ;;
+  *) script_dir=. ;;
+esac
+
+script="$script_dir/base64-$mode"
+if [ ! -x "$script" ]; then
+  printf 'base64: missing helper module: %s\n' "$script" >&2
+  exit 127
+fi
+
+exec "$script" "$@"
+NX_LITE_MODULE_EOF
+      ;;
+    base64-dec)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function fail(message) {
+  print "base64-dec: " message > "/dev/stderr"
+  exit 1
+}
+
+function init_map(    i, c) {
+  alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  for (i = 1; i <= length(alphabet); i++) {
+    c = substr(alphabet, i, 1)
+    value[c] = i - 1
+  }
+}
+
+function clean_base64(s,    i, c, out) {
+  out = ""
+  for (i = 1; i <= length(s); i++) {
+    c = substr(s, i, 1)
+    if (c == " " || c == "\t" || c == "\r" || c == "\n") {
+      continue
+    }
+    out = out c
+  }
+  return out
+}
+
+BEGIN {
+  init_map()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+    exit
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  data = clean_base64(text)
+  len = length(data)
+  if (len == 0) {
+    exit 0
+  }
+  if (len % 4 != 0) {
+    fail("invalid base64 length")
+  }
+
+  out = ""
+  for (i = 1; i <= len; i += 4) {
+    c1 = substr(data, i, 1)
+    c2 = substr(data, i + 1, 1)
+    c3 = substr(data, i + 2, 1)
+    c4 = substr(data, i + 3, 1)
+
+    if (!(c1 in value) || !(c2 in value)) {
+      fail("invalid base64 input")
+    }
+
+    pad = 0
+    if (c3 == "=") {
+      if (c4 != "=") {
+        fail("invalid padding")
+      }
+      pad = 2
+      v3 = 0
+      v4 = 0
+    } else {
+      if (!(c3 in value)) {
+        fail("invalid base64 input")
+      }
+      v3 = value[c3]
+      if (c4 == "=") {
+        pad = 1
+        v4 = 0
+      } else {
+        if (!(c4 in value)) {
+          fail("invalid base64 input")
+        }
+        v4 = value[c4]
+      }
+    }
+
+    if (pad && i + 4 <= len) {
+      fail("padding is only allowed at the end")
+    }
+
+    v1 = value[c1]
+    v2 = value[c2]
+    b1 = v1 * 4 + int(v2 / 16)
+    b2 = (v2 % 16) * 16 + int(v3 / 4)
+    b3 = (v3 % 4) * 64 + v4
+
+    out = out sprintf("%c", b1)
+    if (pad < 2) {
+      out = out sprintf("%c", b2)
+    }
+    if (pad < 1) {
+      out = out sprintf("%c", b3)
+    }
+  }
+  printf "%s\n", out
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    base64-enc)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function init_ord(    i) {
+  for (i = 1; i < 256; i++) {
+    ordv[sprintf("%c", i)] = i
+  }
+}
+
+BEGIN {
+  alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  init_ord()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+    exit
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  n = length(text)
+  out = ""
+  for (i = 1; i <= n; i += 3) {
+    b1 = ordv[substr(text, i, 1)]
+    b2 = (i + 1 <= n) ? ordv[substr(text, i + 1, 1)] : 0
+    b3 = (i + 2 <= n) ? ordv[substr(text, i + 2, 1)] : 0
+
+    c1 = int(b1 / 4)
+    c2 = (b1 % 4) * 16 + int(b2 / 16)
+    c3 = (b2 % 16) * 4 + int(b3 / 64)
+    c4 = b3 % 64
+
+    out = out substr(alphabet, c1 + 1, 1) substr(alphabet, c2 + 1, 1)
+    out = out ((i + 1 <= n) ? substr(alphabet, c3 + 1, 1) : "=")
+    out = out ((i + 2 <= n) ? substr(alphabet, c4 + 1, 1) : "=")
+  }
+  print out
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    color)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx color <#rgb|#rrggbb|rgb|rrggbb>
+  nx color rgb <r> <g> <b>
+  nx color float <r> <g> <b>
+
+Example:
+  nx color "#FF8040"
+  nx color rgb 255 128 64
+EOF
+}
+
+[ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ] && [ "${1:-}" != "help" ] || {
+  usage
+  exit 0
+}
+
+LC_ALL=C awk -v mode="${1:-}" -v a="${2:-}" -v b="${3:-}" -v c="${4:-}" '
+function fail(message) {
+  print "color: " message > "/dev/stderr"
+  exit 1
+}
+
+function hexval(ch,    p) {
+  ch = toupper(ch)
+  p = index("0123456789ABCDEF", ch)
+  return p ? p - 1 : -1
+}
+
+function hexbyte(s,    hi, lo) {
+  hi = hexval(substr(s, 1, 1))
+  lo = hexval(substr(s, 2, 1))
+  if (hi < 0 || lo < 0) {
+    fail("invalid hex color")
+  }
+  return hi * 16 + lo
+}
+
+function tohex(n,    hi, lo, chars) {
+  chars = "0123456789ABCDEF"
+  n = int(n)
+  if (n < 0 || n > 255) {
+    fail("rgb component out of range: " n)
+  }
+  hi = int(n / 16)
+  lo = n % 16
+  return substr(chars, hi + 1, 1) substr(chars, lo + 1, 1)
+}
+
+function print_color(r, g, b) {
+  printf "#%s%s%s\n", tohex(r), tohex(g), tohex(b)
+  printf "rgb %d %d %d\n", r, g, b
+  printf "float %.3f %.3f %.3f\n", r / 255, g / 255, b / 255
+}
+
+function parse_hex(s,    r, g, b) {
+  sub(/^#/, "", s)
+  if (length(s) == 3) {
+    s = substr(s, 1, 1) substr(s, 1, 1) substr(s, 2, 1) substr(s, 2, 1) substr(s, 3, 1) substr(s, 3, 1)
+  }
+  if (length(s) != 6) {
+    fail("expected #rgb or #rrggbb")
+  }
+  r = hexbyte(substr(s, 1, 2))
+  g = hexbyte(substr(s, 3, 2))
+  b = hexbyte(substr(s, 5, 2))
+  print_color(r, g, b)
+}
+
+function parse_255(x, name) {
+  if (x !~ /^[0-9]+$/) {
+    fail("invalid " name " component: " x)
+  }
+  x = int(x)
+  if (x < 0 || x > 255) {
+    fail(name " component out of range: " x)
+  }
+  return x
+}
+
+function parse_float(x, name) {
+  if (x !~ /^(0|1|0\.[0-9]+|1\.0+)$/) {
+    fail("invalid " name " float component: " x)
+  }
+  return int((x + 0) * 255 + 0.5)
+}
+
+BEGIN {
+  if (mode == "") {
+    fail("missing color")
+  }
+  if (mode == "rgb") {
+    if (a == "" || b == "" || c == "") {
+      fail("usage: nx color rgb <r> <g> <b>")
+    }
+    print_color(parse_255(a, "red"), parse_255(b, "green"), parse_255(c, "blue"))
+  } else if (mode == "float") {
+    if (a == "" || b == "" || c == "") {
+      fail("usage: nx color float <r> <g> <b>")
+    }
+    print_color(parse_float(a, "red"), parse_float(b, "green"), parse_float(c, "blue"))
+  } else {
+    parse_hex(mode)
+  }
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    guid)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx guid
+  nx guid upper
+  nx guid no-dash
+  nx guid upper no-dash
+
+Example:
+  nx guid
+  nx guid upper no-dash
+EOF
+}
+
+new_guid() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen
+  elif [ -r /proc/sys/kernel/random/uuid ]; then
+    cat /proc/sys/kernel/random/uuid
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "[guid]::NewGuid().ToString()" 2>/dev/null | tr -d '\r'
+  elif command -v openssl >/dev/null 2>&1; then
+    raw=$(openssl rand -hex 16) || return 1
+    a=$(printf '%s' "$raw" | cut -c1-8)
+    b=$(printf '%s' "$raw" | cut -c9-12)
+    c=$(printf '4%s' "$(printf '%s' "$raw" | cut -c14-16)")
+    d_nibble=$(printf '%s' "$raw" | cut -c17-17)
+    d_first=$(awk -v h="$d_nibble" 'BEGIN { p = index("0123456789abcdef", tolower(h)) - 1; printf "%x", 8 + (p % 4) }')
+    d_rest=$(printf '%s' "$raw" | cut -c18-20)
+    e=$(printf '%s' "$raw" | cut -c21-32)
+    printf '%s-%s-%s-%s%s-%s\n' "$a" "$b" "$c" "$d_first" "$d_rest" "$e"
+  else
+    return 127
+  fi
+}
+
+upper=0
+dash=1
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+    upper|--upper)
+      upper=1
+      ;;
+    lower|--lower)
+      upper=0
+      ;;
+    no-dash|nodash|compact|--no-dash)
+      dash=0
+      ;;
+    dash|dashed|--dash)
+      dash=1
+      ;;
+    *)
+      printf 'guid: unknown option: %s\n' "$arg" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+guid=$(new_guid) || {
+  printf 'guid: needs uuidgen, /proc uuid, powershell.exe, or openssl\n' >&2
+  exit 127
+}
+
+guid=$(printf '%s' "$guid" | tr '[:upper:]' '[:lower:]')
+[ "$dash" -eq 1 ] || guid=$(printf '%s' "$guid" | tr -d '-')
+[ "$upper" -eq 0 ] || guid=$(printf '%s' "$guid" | tr '[:lower:]' '[:upper:]')
+printf '%s\n' "$guid"
+NX_LITE_MODULE_EOF
+      ;;
+    hash)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx hash [file...]
+  nx hash sha256 [file...]
+  nx hash sha1 [file...]
+  nx hash md5 [file...]
+  nx hash -a <sha256|sha1|md5> [file...]
+
+Example:
+  nx hash README.md
+  nx hash md5 README.md
+
+Default algorithm is sha256.
+EOF
+}
+
+die() {
+  printf 'hash: %s\n' "$*" >&2
+  exit 1
+}
+
+normalize_algo() {
+  case "$1" in
+    sha256|sha-256|256) printf 'sha256\n' ;;
+    sha1|sha-1|1) printf 'sha1\n' ;;
+    md5|5) printf 'md5\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+windows_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+input_path() {
+  if [ -f "$1" ]; then
+    printf '%s\n' "$1"
+  elif command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$1" 2>/dev/null || printf '%s\n' "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+certutil_hash() {
+  cert_algo=$1
+  file=$2
+  win_file=$(windows_path "$file")
+
+  certutil.exe -hashfile "$win_file" "$cert_algo" 2>/dev/null | awk '
+    /^[[:xdigit:]][[:xdigit:] ]*$/ {
+      gsub(/[[:space:]]/, "")
+      print tolower($0)
+      found = 1
+      exit
+    }
+    END {
+      if (!found) {
+        exit 1
+      }
+    }
+  '
+}
+
+digest_file() {
+  algo=$1
+  file=$2
+
+  case "$algo" in
+    sha256)
+      if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | awk '{ print $1 }'
+      elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | awk '{ print $1 }'
+      elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha256 "$file" | awk '{ print $NF }'
+      elif command -v certutil.exe >/dev/null 2>&1; then
+        certutil_hash SHA256 "$file"
+      else
+        return 127
+      fi
+      ;;
+    sha1)
+      if command -v sha1sum >/dev/null 2>&1; then
+        sha1sum "$file" | awk '{ print $1 }'
+      elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 1 "$file" | awk '{ print $1 }'
+      elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha1 "$file" | awk '{ print $NF }'
+      elif command -v certutil.exe >/dev/null 2>&1; then
+        certutil_hash SHA1 "$file"
+      else
+        return 127
+      fi
+      ;;
+    md5)
+      if command -v md5sum >/dev/null 2>&1; then
+        md5sum "$file" | awk '{ print $1 }'
+      elif command -v md5 >/dev/null 2>&1; then
+        md5 -q "$file"
+      elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -md5 "$file" | awk '{ print $NF }'
+      elif command -v certutil.exe >/dev/null 2>&1; then
+        certutil_hash MD5 "$file"
+      else
+        return 127
+      fi
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+algo=sha256
+
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -a|--algo)
+    shift
+    [ "$#" -gt 0 ] || die "missing algorithm after -a"
+    algo=$(normalize_algo "$1") || die "unsupported algorithm: $1"
+    shift
+    ;;
+  sha256|sha-256|256|sha1|sha-1|1|md5|5)
+    algo=$(normalize_algo "$1") || die "unsupported algorithm: $1"
+    shift
+    ;;
+esac
+
+[ "$#" -gt 0 ] || die "missing file path"
+
+count=$#
+for file in "$@"; do
+  hash_file=$(input_path "$file")
+  [ -f "$hash_file" ] || die "not a file: $file"
+  digest=$(digest_file "$algo" "$hash_file") || {
+    status=$?
+    if [ "$status" -eq 127 ]; then
+      die "$algo needs one of: ${algo}sum, shasum, openssl, certutil.exe"
+    fi
+    die "failed to hash: $file"
+  }
+
+  if [ "$count" -eq 1 ]; then
+    printf '%s\n' "$digest"
+  else
+    printf '%s  %s\n' "$digest" "$file"
+  fi
+done
+NX_LITE_MODULE_EOF
+      ;;
+    json)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx json [json...]
+  nx json pretty [json...]
+
+Example:
+  nx json '{"a":1}'
+
+Default mode is pretty.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -p|--pretty|pretty)
+    shift
+    ;;
+  --)
+    shift
+    ;;
+esac
+
+case "$0" in
+  */*) script_dir=${0%/*} ;;
+  *) script_dir=. ;;
+esac
+
+script="$script_dir/json-pretty"
+if [ ! -x "$script" ]; then
+  printf 'json: missing helper module: %s\n' "$script" >&2
+  exit 127
+fi
+
+exec "$script" "$@"
+NX_LITE_MODULE_EOF
+      ;;
+    json-pretty)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function fail(message) {
+  print "json-pretty: invalid JSON: " message " at position " pos > "/dev/stderr"
+  exit 1
+}
+
+function peek() {
+  return substr(src, pos, 1)
+}
+
+function skip_ws(    c) {
+  while (pos <= n) {
+    c = peek()
+    if (c == " " || c == "\t" || c == "\r" || c == "\n") {
+      pos++
+    } else {
+      break
+    }
+  }
+}
+
+function write_indent(level,    i) {
+  for (i = 0; i < level; i++) {
+    printf "  "
+  }
+}
+
+function is_hex(c) {
+  return index("0123456789abcdefABCDEF", c) > 0
+}
+
+function parse_string(    start, c, e, i) {
+  if (peek() != "\"") {
+    fail("expected string")
+  }
+  start = pos
+  pos++
+  while (pos <= n) {
+    c = peek()
+    if (c == "\"") {
+      pos++
+      return substr(src, start, pos - start)
+    }
+    if (c == "\\") {
+      pos++
+      if (pos > n) {
+        fail("unterminated escape")
+      }
+      e = peek()
+      if (e == "\"" || e == "\\" || e == "/" || e == "b" || e == "f" || e == "n" || e == "r" || e == "t") {
+        pos++
+      } else if (e == "u") {
+        pos++
+        for (i = 0; i < 4; i++) {
+          if (pos + i > n || !is_hex(substr(src, pos + i, 1))) {
+            fail("invalid unicode escape")
+          }
+        }
+        pos += 4
+      } else {
+        fail("invalid escape")
+      }
+    } else {
+      pos++
+    }
+  }
+  fail("unterminated string")
+}
+
+function parse_number(    start, c, digits) {
+  start = pos
+  if (peek() == "-") {
+    pos++
+  }
+  if (peek() == "0") {
+    pos++
+  } else if (peek() >= "1" && peek() <= "9") {
+    while (peek() >= "0" && peek() <= "9") {
+      pos++
+    }
+  } else {
+    fail("expected number")
+  }
+
+  if (peek() == ".") {
+    pos++
+    digits = 0
+    while (peek() >= "0" && peek() <= "9") {
+      pos++
+      digits++
+    }
+    if (!digits) {
+      fail("expected digits after decimal point")
+    }
+  }
+
+  c = peek()
+  if (c == "e" || c == "E") {
+    pos++
+    c = peek()
+    if (c == "+" || c == "-") {
+      pos++
+    }
+    digits = 0
+    while (peek() >= "0" && peek() <= "9") {
+      pos++
+      digits++
+    }
+    if (!digits) {
+      fail("expected exponent digits")
+    }
+  }
+
+  return substr(src, start, pos - start)
+}
+
+function parse_literal(lit) {
+  if (substr(src, pos, length(lit)) != lit) {
+    fail("expected " lit)
+  }
+  pos += length(lit)
+  return lit
+}
+
+function parse_value(level,    c) {
+  skip_ws()
+  c = peek()
+  if (c == "{") {
+    parse_object(level)
+  } else if (c == "[") {
+    parse_array(level)
+  } else if (c == "\"") {
+    printf "%s", parse_string()
+  } else if (c == "-" || (c >= "0" && c <= "9")) {
+    printf "%s", parse_number()
+  } else if (c == "t") {
+    printf "%s", parse_literal("true")
+  } else if (c == "f") {
+    printf "%s", parse_literal("false")
+  } else if (c == "n") {
+    printf "%s", parse_literal("null")
+  } else {
+    fail("expected value")
+  }
+}
+
+function parse_object(level,    first, key, c) {
+  printf "{"
+  pos++
+  skip_ws()
+  if (peek() == "}") {
+    pos++
+    printf "}"
+    return
+  }
+
+  first = 1
+  while (pos <= n) {
+    if (!first) {
+      printf ","
+    }
+    printf "\n"
+    write_indent(level + 1)
+    skip_ws()
+    key = parse_string()
+    skip_ws()
+    if (peek() != ":") {
+      fail("expected colon")
+    }
+    pos++
+    printf "%s: ", key
+    parse_value(level + 1)
+    skip_ws()
+    c = peek()
+    if (c == ",") {
+      pos++
+      first = 0
+      continue
+    }
+    if (c == "}") {
+      pos++
+      printf "\n"
+      write_indent(level)
+      printf "}"
+      return
+    }
+    fail("expected comma or object end")
+  }
+  fail("unterminated object")
+}
+
+function parse_array(level,    first, c) {
+  printf "["
+  pos++
+  skip_ws()
+  if (peek() == "]") {
+    pos++
+    printf "]"
+    return
+  }
+
+  first = 1
+  while (pos <= n) {
+    if (!first) {
+      printf ","
+    }
+    printf "\n"
+    write_indent(level + 1)
+    parse_value(level + 1)
+    skip_ws()
+    c = peek()
+    if (c == ",") {
+      pos++
+      first = 0
+      continue
+    }
+    if (c == "]") {
+      pos++
+      printf "\n"
+      write_indent(level)
+      printf "]"
+      return
+    }
+    fail("expected comma or array end")
+  }
+  fail("unterminated array")
+}
+
+BEGIN {
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    src = ENVIRON["NX_LITE_INPUT"]
+    exit
+  }
+}
+
+!from_args {
+  src = src (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  if (src !~ /[^[:space:]]/) {
+    print "json-pretty: missing JSON input" > "/dev/stderr"
+    exit 1
+  }
+  pos = 1
+  n = length(src)
+  parse_value(0)
+  skip_ws()
+  if (pos <= n) {
+    fail("trailing data")
+  }
+  printf "\n"
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    md5)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function init_ord(    i) {
+  for (i = 1; i < 256; i++) {
+    ordv[sprintf("%c", i)] = i
+  }
+}
+
+function init_md5(    ktmp, stmp, i) {
+  MOD = 4294967296
+  MASK = 4294967295
+  HEX = "0123456789abcdef"
+
+  pow2[0] = 1
+  for (i = 1; i <= 32; i++) {
+    pow2[i] = pow2[i - 1] * 2
+  }
+
+  split("3614090360 3905402710 606105819 3250441966 4118548399 1200080426 2821735955 4249261313 1770035416 2336552879 4294925233 2304563134 1804603682 4254626195 2792965006 1236535329 4129170786 3225465664 643717713 3921069994 3593408605 38016083 3634488961 3889429448 568446438 3275163606 4107603335 1163531501 2850285829 4243563512 1735328473 2368359562 4294588738 2272392833 1839030562 4259657740 2763975236 1272893353 4139469664 3200236656 681279174 3936430074 3572445317 76029189 3654602809 3873151461 530742520 3299628645 4096336452 1126891415 2878612391 4237533241 1700485571 2399980690 4293915773 2240044497 1873313359 4264355552 2734768916 1309151649 4149444226 3174756917 718787259 3951481745", ktmp, " ")
+  split("7 12 17 22 7 12 17 22 7 12 17 22 7 12 17 22 5 9 14 20 5 9 14 20 5 9 14 20 5 9 14 20 4 11 16 23 4 11 16 23 4 11 16 23 4 11 16 23 6 10 15 21 6 10 15 21 6 10 15 21 6 10 15 21", stmp, " ")
+
+  for (i = 0; i < 64; i++) {
+    K[i] = ktmp[i + 1] + 0
+    S[i] = stmp[i + 1] + 0
+  }
+}
+
+function add32(a, b,    r) {
+  r = (a + b) % MOD
+  return r < 0 ? r + MOD : r
+}
+
+function bit_and(a, b,    r, p, aa, bb) {
+  r = 0
+  p = 1
+  while (a > 0 || b > 0) {
+    aa = a % 2
+    bb = b % 2
+    if (aa && bb) {
+      r += p
+    }
+    a = int(a / 2)
+    b = int(b / 2)
+    p *= 2
+  }
+  return r
+}
+
+function bit_or(a, b,    r, p, aa, bb) {
+  r = 0
+  p = 1
+  while (a > 0 || b > 0) {
+    aa = a % 2
+    bb = b % 2
+    if (aa || bb) {
+      r += p
+    }
+    a = int(a / 2)
+    b = int(b / 2)
+    p *= 2
+  }
+  return r
+}
+
+function bit_xor(a, b,    r, p, aa, bb) {
+  r = 0
+  p = 1
+  while (a > 0 || b > 0) {
+    aa = a % 2
+    bb = b % 2
+    if ((aa && !bb) || (!aa && bb)) {
+      r += p
+    }
+    a = int(a / 2)
+    b = int(b / 2)
+    p *= 2
+  }
+  return r
+}
+
+function bit_not(a) {
+  return MASK - a
+}
+
+function lshift32(a, n,    i) {
+  for (i = 0; i < n; i++) {
+    a = (a * 2) % MOD
+  }
+  return a
+}
+
+function rshift32(a, n) {
+  return int(a / pow2[n])
+}
+
+function leftrotate(a, n) {
+  return add32(lshift32(a, n), rshift32(a, 32 - n))
+}
+
+function byte_hex(b) {
+  b = int(b) % 256
+  return substr(HEX, int(b / 16) + 1, 1) substr(HEX, (b % 16) + 1, 1)
+}
+
+function word_hex_le(w) {
+  return byte_hex(w % 256) byte_hex(int(w / 256) % 256) byte_hex(int(w / 65536) % 256) byte_hex(int(w / 16777216) % 256)
+}
+
+function digest(msg,    len, i, total, bitlen, low, high, offset, j, k, h0, h1, h2, h3, a, b, c, d, f, g, temp, x, bytes, m) {
+  len = length(msg)
+  for (i = 1; i <= len; i++) {
+    bytes[i - 1] = ordv[substr(msg, i, 1)]
+  }
+
+  bytes[len] = 128
+  total = len + 1
+  while (total % 64 != 56) {
+    bytes[total] = 0
+    total++
+  }
+
+  bitlen = len * 8
+  low = bitlen % MOD
+  high = int(bitlen / MOD)
+  for (i = 0; i < 4; i++) {
+    bytes[total + i] = int(low / pow2[8 * i]) % 256
+    bytes[total + 4 + i] = int(high / pow2[8 * i]) % 256
+  }
+  total += 8
+
+  h0 = 1732584193
+  h1 = 4023233417
+  h2 = 2562383102
+  h3 = 271733878
+
+  for (offset = 0; offset < total; offset += 64) {
+    for (j = 0; j < 16; j++) {
+      k = offset + j * 4
+      m[j] = bytes[k] + bytes[k + 1] * 256 + bytes[k + 2] * 65536 + bytes[k + 3] * 16777216
+    }
+
+    a = h0
+    b = h1
+    c = h2
+    d = h3
+
+    for (i = 0; i < 64; i++) {
+      if (i < 16) {
+        f = bit_or(bit_and(b, c), bit_and(bit_not(b), d))
+        g = i
+      } else if (i < 32) {
+        f = bit_or(bit_and(d, b), bit_and(bit_not(d), c))
+        g = (5 * i + 1) % 16
+      } else if (i < 48) {
+        f = bit_xor(bit_xor(b, c), d)
+        g = (3 * i + 5) % 16
+      } else {
+        f = bit_xor(c, bit_or(b, bit_not(d)))
+        g = (7 * i) % 16
+      }
+
+      temp = d
+      d = c
+      c = b
+      x = add32(add32(a, f), add32(K[i], m[g]))
+      b = add32(b, leftrotate(x, S[i]))
+      a = temp
+    }
+
+    h0 = add32(h0, a)
+    h1 = add32(h1, b)
+    h2 = add32(h2, c)
+    h3 = add32(h3, d)
+  }
+
+  return word_hex_le(h0) word_hex_le(h1) word_hex_le(h2) word_hex_le(h3)
+}
+
+BEGIN {
+  init_ord()
+  init_md5()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+    exit
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  print digest(text)
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    pow2)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx pow2 <number>
+  nx pow2 up <number>
+  nx pow2 down <number>
+  nx pow2 check <number>
+
+Example:
+  nx pow2 300
+  nx pow2 check 512
+
+Default mode is up.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+esac
+
+mode=up
+case "${1:-}" in
+  up|next)
+    mode=up
+    shift
+    ;;
+  down|prev)
+    mode=down
+    shift
+    ;;
+  check|is)
+    mode=check
+    shift
+    ;;
+esac
+
+value=${1:-}
+[ -n "$value" ] || {
+  printf 'pow2: missing number\n' >&2
+  exit 1
+}
+
+LC_ALL=C awk -v mode="$mode" -v value="$value" '
+function fail(message) {
+  print "pow2: " message > "/dev/stderr"
+  exit 1
+}
+
+BEGIN {
+  if (value !~ /^[0-9]+$/) {
+    fail("expected a positive integer")
+  }
+  n = int(value)
+  if (n < 1) {
+    fail("expected a positive integer")
+  }
+
+  p = 1
+  while (p < n) {
+    p *= 2
+  }
+
+  if (mode == "check") {
+    print (p == n ? "true" : "false")
+  } else if (mode == "down") {
+    if (p > n) {
+      p /= 2
+    }
+    print p
+  } else {
+    print p
+  }
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    url)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+set -u
+
+usage() {
+  cat <<EOF
+Usage:
+  nx url [text...]
+  nx url -d [url-encoded...]
+  nx url decode [url-encoded...]
+
+Example:
+  nx url "a b+c"
+  nx url -d "a%20b%2Bc"
+
+Default mode is encode.
+EOF
+}
+
+mode=enc
+case "${1:-}" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  -d|--decode|dec|decode)
+    mode=dec
+    shift
+    ;;
+  -e|--encode|enc|encode)
+    mode=enc
+    shift
+    ;;
+  --)
+    shift
+    ;;
+esac
+
+case "$0" in
+  */*) script_dir=${0%/*} ;;
+  *) script_dir=. ;;
+esac
+
+script="$script_dir/url-$mode"
+if [ ! -x "$script" ]; then
+  printf 'url: missing helper module: %s\n' "$script" >&2
+  exit 127
+fi
+
+exec "$script" "$@"
+NX_LITE_MODULE_EOF
+      ;;
+    url-dec)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function fail(message) {
+  print "url-dec: " message > "/dev/stderr"
+  exit 1
+}
+
+function hexval(c,    p) {
+  c = toupper(c)
+  p = index("0123456789ABCDEF", c)
+  return p ? p - 1 : -1
+}
+
+BEGIN {
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+    exit
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  out = ""
+  for (i = 1; i <= length(text); i++) {
+    c = substr(text, i, 1)
+    if (c == "%") {
+      if (i + 2 > length(text)) {
+        fail("incomplete percent escape")
+      }
+      h1 = hexval(substr(text, i + 1, 1))
+      h2 = hexval(substr(text, i + 2, 1))
+      if (h1 < 0 || h2 < 0) {
+        fail("invalid percent escape")
+      }
+      out = out sprintf("%c", h1 * 16 + h2)
+      i += 2
+    } else {
+      out = out c
+    }
+  }
+  printf "%s\n", out
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    url-enc)
+      cat > "$target" <<'NX_LITE_MODULE_EOF'
+#!/usr/bin/env sh
+
+if [ "$#" -gt 0 ]; then
+  NX_LITE_HAS_ARGS=1
+  NX_LITE_INPUT=$*
+else
+  NX_LITE_HAS_ARGS=0
+  NX_LITE_INPUT=
+fi
+export NX_LITE_HAS_ARGS NX_LITE_INPUT
+
+LC_ALL=C awk '
+function init_ord(    i) {
+  for (i = 1; i < 256; i++) {
+    ordv[sprintf("%c", i)] = i
+  }
+}
+
+function is_unreserved(c) {
+  return (c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c == "-" || c == "_" || c == "." || c == "~"
+}
+
+BEGIN {
+  hex = "0123456789ABCDEF"
+  init_ord()
+  from_args = (ENVIRON["NX_LITE_HAS_ARGS"] == "1")
+  if (from_args) {
+    text = ENVIRON["NX_LITE_INPUT"]
+    exit
+  }
+}
+
+!from_args {
+  text = text (seen ? "\n" : "") $0
+  seen = 1
+}
+
+END {
+  out = ""
+  for (i = 1; i <= length(text); i++) {
+    c = substr(text, i, 1)
+    if (is_unreserved(c)) {
+      out = out c
+    } else {
+      b = ordv[c]
+      out = out "%" substr(hex, int(b / 16) + 1, 1) substr(hex, (b % 16) + 1, 1)
+    }
+  }
+  print out
+}
+'
+NX_LITE_MODULE_EOF
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  chmod +x "$target" || die "failed to mark $target executable"
+}

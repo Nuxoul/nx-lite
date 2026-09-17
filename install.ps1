@@ -26,8 +26,10 @@ $NxHome = if ($env:NX_LITE_HOME) { $env:NX_LITE_HOME } else { Join-Path $HomeDir
 $BinDir = if ($env:NX_LITE_BIN_DIR) { $env:NX_LITE_BIN_DIR } else { Join-Path (Join-Path $HomeDir ".local") "bin" }
 $CommandsDir = Join-Path $NxHome "commands"
 $TemplatesDir = Join-Path $NxHome "templates"
+$RuntimeDir = Join-Path $NxHome "runtime"
 $Entrypoint = Join-Path $BinDir "nx"
 $Modules = @("base64", "base64-enc", "base64-dec", "angle", "color", "guid", "hash", "json", "json-pretty", "pow2", "url", "url-enc", "url-dec", "md5")
+$RuntimeFiles = @("core.sh", "ui.sh", "default-modules.sh", "lifecycle.sh")
 $DownloadHeaders = @{
     "User-Agent" = "nx-lite-installer"
 }
@@ -300,10 +302,15 @@ New-Dir $BinDir
 New-Dir $NxHome
 New-Dir $CommandsDir
 New-Dir $TemplatesDir
+New-Dir $RuntimeDir
 
 $base = $RawBase.TrimEnd("/")
 Save-Url "$base/bin/nx" $Entrypoint
 Write-WindowsLaunchers $BinDir
+
+foreach ($runtimeFile in $RuntimeFiles) {
+    Save-Url "$base/lib/nx/$runtimeFile" (Join-Path $RuntimeDir $runtimeFile)
+}
 
 foreach ($name in $Modules) {
     $commandPath = Join-Path $CommandsDir $name

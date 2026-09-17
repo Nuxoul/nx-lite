@@ -8,6 +8,8 @@ RAW_BASE=${1:-${NX_LITE_RAW_BASE:-$DEFAULT_RAW_BASE}}
 NX_LITE_HOME=${NX_LITE_HOME:-$HOME/.nx-lite}
 NX_LITE_BIN_DIR=${NX_LITE_BIN_DIR:-$HOME/.local/bin}
 ENTRYPOINT="$NX_LITE_BIN_DIR/nx"
+RUNTIME_DIR="$NX_LITE_HOME/runtime"
+RUNTIME_FILES="core.sh ui.sh default-modules.sh lifecycle.sh"
 
 die() {
   printf 'nx-lite installer: %s\n' "$*" >&2
@@ -43,9 +45,15 @@ case "$RAW_BASE" in
 esac
 
 mkdir -p "$NX_LITE_BIN_DIR" "$NX_LITE_HOME" || die "failed to create install directories"
+mkdir -p "$RUNTIME_DIR" || die "failed to create runtime directory"
 
 fetch "${RAW_BASE%/}/bin/nx" "$ENTRYPOINT"
 chmod +x "$ENTRYPOINT" || die "failed to mark $ENTRYPOINT executable"
+
+for runtime_file in $RUNTIME_FILES; do
+  fetch "${RAW_BASE%/}/lib/nx/$runtime_file" "$RUNTIME_DIR/$runtime_file"
+  chmod +x "$RUNTIME_DIR/$runtime_file" || die "failed to mark runtime file executable"
+done
 
 sh "$ENTRYPOINT" init
 

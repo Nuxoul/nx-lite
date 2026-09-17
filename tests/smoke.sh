@@ -8,7 +8,7 @@ HASH_FILE="$SANDBOX/hash-input.txt"
 
 cd "$ROOT"
 chmod +x bin/nx commands/* templates/*
-sh tools/sync-modules.sh --check
+sh tools/build.sh --check
 rm -rf "$SANDBOX"
 mkdir -p "$SANDBOX"
 printf 'hello' > "$HASH_FILE"
@@ -122,6 +122,7 @@ assert_contains "$help_output" 'version:'
 assert_contains "$help_output" 'nx upgrade [raw-base-url]'
 assert_contains "$help_output" 'base64       Encode or decode Base64'
 assert_contains "$help_output" 'nx doctor'
+assert_contains "$help_output" 'nx completion <bash|zsh|powershell>'
 assert_not_contains "$help_output" 'Available commands:'
 assert_not_contains "$help_output" 'commands:'
 
@@ -154,6 +155,20 @@ assert_contains "$base64_usage" 'Example:'
 base64_help=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" help base64)
 assert_contains "$base64_help" 'Usage:'
 assert_contains "$base64_help" 'Default mode is encode.'
+
+assert_eq 'aGVsbG8=' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" b64 hello
+assert_eq 'Hello' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" b64d SGVsbG8=
+assert_eq '512' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" p2 300
+
+module_info=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" mod info b64)
+assert_contains "$module_info" 'Name:        base64'
+assert_contains "$module_info" 'Aliases:     b64'
+
+completion_output=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" completion powershell)
+assert_contains "$completion_output" 'Register-ArgumentCompleter'
+
+path_output=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" path status 2>&1 || true)
+assert_contains "$path_output" 'PATH does not contain'
 
 doctor_output=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" doctor)
 assert_contains "$doctor_output" 'nx-lite doctor'
@@ -190,7 +205,7 @@ if command -v curl >/dev/null 2>&1; then
   RAW_SANDBOX="/tmp/nx-lite-smoke-$$"
   rm -rf "$RAW_SANDBOX"
   mkdir -p "$RAW_SANDBOX"
-  cp -R "$ROOT/bin" "$ROOT/commands" "$RAW_SANDBOX/"
+  cp -R "$ROOT/bin" "$ROOT/commands" "$ROOT/templates" "$ROOT/lib" "$RAW_SANDBOX/"
   if raw_path=$(cd "$RAW_SANDBOX" && pwd -W 2>/dev/null); then
     raw_path=$(printf '%s' "$raw_path" | awk '{ gsub(/ /, "%20"); print }')
     raw_base="file:///$raw_path"

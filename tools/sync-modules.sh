@@ -5,15 +5,13 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 COMMANDS_DIR=$ROOT/commands
 TEMPLATES_DIR=$ROOT/templates
-ENTRYPOINT=$ROOT/bin/nx
-BEGIN='# BEGIN GENERATED DEFAULT MODULES'
-END='# END GENERATED DEFAULT MODULES'
+LIB_DIR=$ROOT/lib/nx
 
 usage() {
   printf '%s\n' \
     'Usage: sh tools/sync-modules.sh [--check]' \
     '' \
-    'Synchronize templates and the embedded default modules in bin/nx.' \
+    'Synchronize command templates and validate runtime source modules.' \
     'Without --check, generated files are updated. With --check, differences fail.'
 }
 
@@ -52,13 +50,6 @@ for command_file in "$COMMANDS_DIR"/*; do
   fi
 done
 
-tmp_dir=${TMPDIR:-/tmp}/nx-lite-sync.$$
-cleanup() {
-  rm -rf "$tmp_dir"
-}
-trap cleanup EXIT HUP INT TERM
-mkdir "$tmp_dir"
-
 if [ "$check_only" -eq 0 ]; then
   mkdir -p "$TEMPLATES_DIR"
   for command_file in "$COMMANDS_DIR"/*; do
@@ -90,62 +81,12 @@ else
   done
 fi
 
-generated=$tmp_dir/nx
-grep -q "^$BEGIN\$" "$ENTRYPOINT" || {
-  printf 'missing generated module start marker: %s\n' "$ENTRYPOINT" >&2
-  exit 1
-}
-grep -q "^$END\$" "$ENTRYPOINT" || {
-  printf 'missing generated module end marker: %s\n' "$ENTRYPOINT" >&2
-  exit 1
-}
-awk -v begin="$BEGIN" -v end="$END" '
-  $0 == begin { found_begin = 1; exit }
-  { print }
-' "$ENTRYPOINT" > "$generated"
-
-printf '%s\n' "$BEGIN" >> "$generated"
-cat >> "$generated" <<'HEADER'
-write_default_template() {
-  name=$1
-  target=$2
-
-  case "$name" in
-HEADER
-
-for command_file in "$COMMANDS_DIR"/*; do
-  [ -f "$command_file" ] || continue
-  name=${command_file##*/}
-  printf '    %s)\n      cat > "$target" <<'"'"'NX_LITE_MODULE_EOF'"'"'\n' "$name" >> "$generated"
-  cat "$command_file" >> "$generated"
-  printf '%s\n' 'NX_LITE_MODULE_EOF' '      ;;' >> "$generated"
-done
-
-cat >> "$generated" <<'FOOTER'
-    *)
-      return 1
-      ;;
-  esac
-
-  chmod +x "$target" || die "failed to mark $target executable"
-}
-FOOTER
-printf '%s\n' "$END" >> "$generated"
-
-awk -v begin="$BEGIN" -v end="$END" '
-  $0 == end { found_end = 1; next }
-  found_end { print }
-' "$ENTRYPOINT" >> "$generated"
-
-if [ "$check_only" -eq 1 ]; then
-  if ! cmp -s "$generated" "$ENTRYPOINT"; then
-    printf 'embedded modules out of date: %s\n' "$ENTRYPOINT" >&2
+for source_file in "$LIB_DIR/core.sh" "$LIB_DIR/ui.sh" "$LIB_DIR/default-modules.sh" "$LIB_DIR/lifecycle.sh"; do
+  [ -f "$source_file" ] || {
+    printf 'missing source module: %s\n' "$source_file" >&2
     exit 1
-  fi
-else
-  cp "$generated" "$ENTRYPOINT"
-  chmod +x "$ENTRYPOINT"
-fi
+  }
+done
 
 if [ "$check_only" -eq 0 ]; then
   module_count=0
