@@ -94,7 +94,9 @@ After installation, the runtime layout is:
 `bin/nx` is the complete source for the target entrypoint `~/.local/bin/nx`. It is a POSIX `sh` script and includes:
 
 - `nx init`
-- `nx help` and `nx --help`
+- `nx help [command]` and `nx --help`
+- `nx doctor`
+- `nx --no-clip <command> [args...]`
 - `nx mod --help`
 - `nx mod list`
 - `nx mod install <name>`
@@ -184,6 +186,31 @@ $env:NX_LITE_RAW_BASE = "https://raw.githubusercontent.com/Nuxoul/nx-lite/main"
 
 It copies the entrypoint to `~/.local/bin/nx`, installs the default modules, writes local templates, and prints a PATH hint if `~/.local/bin` is not already in `PATH`.
 
+`nx` copies successful command output to the system clipboard when a supported
+clipboard tool is available. Disable that behavior for one invocation with:
+
+```sh
+nx --no-clip base64 "hello"
+```
+
+Use `nx doctor` to inspect the shell, `awk`, installation directories, PATH,
+and clipboard support when troubleshooting:
+
+```sh
+nx doctor
+nx help base64
+```
+
+Interactive help and diagnostics use a small amount of terminal color when
+stdout is a TTY. Color is automatically disabled when output is piped. Set
+`NO_COLOR` or `NX_LITE_COLOR=never` to disable it, or use
+`NX_LITE_COLOR=always` to force it:
+
+```sh
+NO_COLOR=1 nx --help
+NX_LITE_COLOR=always nx doctor
+```
+
 Runtime requirements:
 
 - POSIX-compatible `sh`
@@ -221,6 +248,20 @@ Development smoke test:
 
 ```sh
 sh tests/smoke.sh
+```
+
+Command sources are maintained only in `commands/`. The matching files in
+`templates/` and the embedded default modules in `bin/nx` are generated
+artifacts. After changing a command, synchronize them with:
+
+```sh
+sh tools/sync-modules.sh
+```
+
+CI and the smoke test use `--check` to reject stale generated files:
+
+```sh
+sh tools/sync-modules.sh --check
 ```
 
 Expected default modules:

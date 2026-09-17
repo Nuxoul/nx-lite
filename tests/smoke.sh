@@ -8,6 +8,7 @@ HASH_FILE="$SANDBOX/hash-input.txt"
 
 cd "$ROOT"
 chmod +x bin/nx commands/* templates/*
+sh tools/sync-modules.sh --check
 rm -rf "$SANDBOX"
 mkdir -p "$SANDBOX"
 printf 'hello' > "$HASH_FILE"
@@ -119,8 +120,13 @@ help_output=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin"
 assert_contains "$help_output" 'nx-lite - modular terminal command toolbox'
 assert_contains "$help_output" 'version:'
 assert_contains "$help_output" 'nx upgrade [raw-base-url]'
+assert_contains "$help_output" 'base64       Encode or decode Base64'
+assert_contains "$help_output" 'nx doctor'
 assert_not_contains "$help_output" 'Available commands:'
 assert_not_contains "$help_output" 'commands:'
+
+plain_help=$(env NO_COLOR=1 NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" --help)
+assert_not_contains "$plain_help" "$(printf '\033')"
 
 unknown_output=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" __missing__ 2>&1 || true)
 if [ "$unknown_output" != 'nx: command not found: __missing__' ]; then
@@ -136,10 +142,20 @@ base64_usage=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin
 assert_contains "$base64_usage" 'Usage:'
 assert_contains "$base64_usage" 'Example:'
 
+base64_help=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" help base64)
+assert_contains "$base64_help" 'Usage:'
+assert_contains "$base64_help" 'Default mode is encode.'
+
+doctor_output=$(env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" doctor)
+assert_contains "$doctor_output" 'nx-lite doctor'
+assert_contains "$doctor_output" '[ok] awk:'
+assert_contains "$doctor_output" '[ok] nx home:'
+
 assert_eq 'aGVsbG8=' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64-enc hello
 assert_eq 'Hello' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64-dec SGVsbG8=
 assert_eq 'aGVsbG8=' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64 hello
 assert_eq 'aGVsbG8=' env NX_LITE_CLIP=0 NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64 hello
+assert_eq 'aGVsbG8=' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" --no-clip base64 hello
 assert_eq 'Hello' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" base64 -d SGVsbG8=
 assert_eq 'a%20b%2Bc' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" url 'a b+c'
 assert_eq 'a b+c' env NX_LITE_HOME="$SANDBOX/nx-lite" NX_LITE_BIN_DIR="$SANDBOX/bin" sh "$SANDBOX/bin/nx" url -d 'a%20b%2Bc'
